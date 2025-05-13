@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <!-- 设置字符编码为UTF-8，确保中文字符正确显示 -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <!-- 针对移动设备优化，设置视口宽度等于设备宽度，初始缩放比例为1 -->
+    <title>我的睡眠日记</title>
+    <!-- 页面标题 -->
+    <link rel="stylesheet" href="style.css">
+    <!-- 链接外部CSS样式表 -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script> <!-- 新增：引入Chart.js库 -->
+</head>
+<body>
+
+    <!-- 顶部区域 -->
+    <header>
+        <h1>我的睡眠日记</h1>
+        <!-- 应用名称 -->
+        <div>
+            <button id="exportDataBtn">导出全部数据</button>
+            <!-- 导出数据按钮 -->
+            <button id="importDataBtn">导入数据</button>
+            <!-- 导入数据按钮 -->
+            <!-- (可选) 关于/帮助按钮可以后续添加 -->
+        </div>
+    </header>
+
+    <!-- 主内容区域 -->
+    <div class="container">
+        <!-- 左侧/上半部分: 内容录入与编辑区 -->
+        <section class="input-section">
+            <h2>日记录入与编辑</h2>
+
+            <div class="form-group">
+                <label for="datePicker">选择日期:</label>
+                <input type="date" id="datePicker">
+                <!-- 日期选择器 -->
+            </div>
+
+            <fieldset>
+                <legend>睡眠时段详细信息</legend>
+                <!-- 引导式时间录入 -->
+                <div class="form-group">
+                    <label for="bedTime">A. 准备睡觉时间 (昨晚):</label>
+                    <input type="time" id="bedTime">
+                    <!-- 准备睡觉时间输入框 -->
+                </div>
+
+                <div class="form-group">
+                    <label for="sleepLatency">B. 入睡耗时 (估算):</label>
+                    <input type="number" id="sleepLatency" min="0" step="5" placeholder="例如: 15"> 分钟
+                    <!-- 入睡耗时输入框，单位分钟 -->
+                    <p class="feedback" id="calculatedSleepTime">估算入睡时间点：--:--</p>
+                    <!-- 即时反馈：估算入睡时间点 -->
+                </div>
+
+                <div class="form-group">
+                    <label for="awakeningsCount">C. 夜间觉醒次数:</label>
+                    <input type="number" id="awakeningsCount" min="0" value="0">
+                    <!-- 夜间觉醒次数输入框 -->
+                </div>
+
+                <div class="form-group">
+                    <label for="awakeningsDuration">D. 夜间觉醒总时长 (估算):</label>
+                    <input type="number" id="awakeningsDuration" min="0" step="5" placeholder="例如: 10"> 分钟
+                    <!-- 夜间觉醒总时长输入框，单位分钟 -->
+                </div>
+
+                <div class="form-group">
+                    <label for="wakeUpTime">E. 最终清醒时间 (今早):</label>
+                    <input type="time" id="wakeUpTime">
+                    <!-- 最终清醒时间输入框 -->
+                </div>
+
+                <div class="form-group">
+                    <label for="outOfBedTime">F. 离开卧床时间 (今早):</label>
+                    <input type="time" id="outOfBedTime">
+                    <!-- 离开卧床时间输入框 -->
+                    <p class="feedback" id="timeAwakeInBed">醒后卧床：- 分钟</p>
+                    <!-- 即时反馈：醒后卧床时长 -->
+                </div>
+            </fieldset>
+
+            <fieldset>
+                <legend>关键影响因素</legend>
+                <!-- 关键影响因素标记 -->
+                <div class="form-group">
+                    <input type="checkbox" id="factorCaffeine"> <label for="factorCaffeine">咖啡因</label>
+                    <input type="text" id="factorCaffeineDetail" placeholder="时间/量 (可选)" class="inline-input" style="display:none;">
+                </div>
+                <div class="form-group">
+                    <input type="checkbox" id="factorAlcohol"> <label for="factorAlcohol">酒精</label>
+                    <input type="text" id="factorAlcoholDetail" placeholder="时间/量 (可选)" class="inline-input" style="display:none;">
+                </div>
+                <div class="form-group">
+                    <input type="checkbox" id="factorMedication"> <label for="factorMedication">药物</label>
+                    <input type="text" id="factorMedicationDetail" placeholder="名称/剂量 (可选)" class="inline-input" style="display:none;">
+                </div>
+                <div class="form-group">
+                    <input type="checkbox" id="factorExercise"> <label for="factorExercise">运动</label>
+                    <input type="text" id="factorExerciseDetail" placeholder="时间/强度 (可选)" class="inline-input" style="display:none;">
+                </div>
+                 <div class="form-group">
+                    <input type="checkbox" id="factorDaytimeDrowsiness"> <label for="factorDaytimeDrowsiness">日间困倦</label>
+                    <input type="text" id="factorDaytimeDrowsinessDetail" placeholder="程度/发生时间 (可选)" class="inline-input" style="display:none;">
+                </div>
+            </fieldset>
+
+            <fieldset>
+                <legend>主观评价</legend>
+                <!-- 主观评价录入 -->
+                <div class="form-group">
+                    <label for="sleepQuality">睡眠品质 (1-5级):</label>
+                    <select id="sleepQuality">
+                        <option value="">--选择--</option>
+                        <option value="1">1 - 很差</option>
+                        <option value="2">2 - 较差</option>
+                        <option value="3">3 - 一般</option>
+                        <option value="4">4 - 较好</option>
+                        <option value="5">5 - 很好</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="daytimeAlertness">白天精神 (1-5级):</label>
+                    <select id="daytimeAlertness">
+                        <option value="">--选择--</option>
+                        <option value="1">1 - 很疲惫</option>
+                        <option value="2">2 - 较疲惫</option>
+                        <option value="3">3 - 一般</option>
+                        <option value="4">4 - 精力充沛</option>
+                        <option value="5">5 - 非常充沛</option>
+                    </select>
+                </div>
+            </fieldset>
+
+            <div class="form-group">
+                <label for="notes">备注:</label>
+                <textarea id="notes" rows="3" placeholder="记录其他影响因素或感受..."></textarea>
+                <!-- 备注输入框 -->
+            </div>
+
+            <div class="button-group">
+                <!-- 操作按钮组 -->
+                <button id="saveDiaryBtn">保存日记</button>
+                <!-- 保存/更新日记按钮 -->
+                <button id="clearFormBtn">清空表单/填写新日记</button>
+                <!-- 清空表单按钮 -->
+                <button id="deleteDiaryBtn" style="display:none;">删除此条日记</button>
+                <!-- 删除日记按钮，初始隐藏 -->
+            </div>
+        </section>
+
+        <!-- 右侧/下半部分: 指标与历史区 -->
+        <section class="output-section">
+            <h2>当前日记睡眠指标</h2>
+            <!-- 实时计算的睡眠指标展示区 -->
+            <div id="currentMetrics">
+                <p>卧床时间 (TIB): <strong id="metricTIB">-</strong></p>
+                <p>入睡潜伏期 (SL): <strong id="metricSL">-</strong></p>
+                <p>实际入睡时间点: <strong id="metricActualSleepTime">-</strong></p>
+                <p>睡后觉醒时长 (WASO): <strong id="metricWASO">-</strong></p>
+                <p>睡眠总时长 (TST): <strong id="metricTST">-</strong></p>
+                <p>睡眠效率 (SE): <strong id="metricSE">-</strong></p>
+                <p>醒后卧床时长: <strong id="metricTimeAwakeInBedDisplay">-</strong></p>
+            </div>
+
+            <hr style="margin: 20px 0;">
+
+            <h2>历史日记</h2>
+            <!-- 历史日记列表展示区 -->
+            <div id="historyList">
+                <!-- 历史记录将通过JavaScript动态填充到这里 -->
+                <p>暂无历史记录。</p>
+            </div>
+
+            <hr style="margin: 20px 0;"> <!-- 分隔线 -->
+
+            <!-- 新增：数据可视化区域 -->
+            <h2>数据可视化</h2>
+            <div id="chartContainer" style="position: relative; height:40vh; width:80vw; max-width: 800px; margin: 20px auto;">
+                <canvas id="sleepDataChart"></canvas>
+                <!-- canvas元素用于Chart.js绘制图表 -->
+                <p id="chartNoDataMessage" style="text-align: center; display: none; padding-top: 20px;">暂无足够数据进行可视化。</p>
+                <!-- 当没有数据时显示此消息 -->
+            </div>
+            <!-- 结束：数据可视化区域 -->
+
+        </section>
+    </div>
+
+    <!-- 底部提示区域 -->
+    <footer>
+        <p><strong>重要提示:</strong> 您的睡眠数据仅存储在此浏览器中。清除浏览器数据、更换浏览器或设备将导致所有记录丢失。请务必定期使用“导出数据”功能备份您的记录。</p>
+        <!-- 数据存储风险提示 -->
+    </footer>
+
+    <input type="file" id="importFile" accept=".json" style="display: none;">
+    <!-- 隐藏的文件输入框，用于导入数据 -->
+
+    <script src="app.js" defer></script>
+    <!-- 链接外部JavaScript文件 (我们稍后会创建这个文件) -->
+    <!-- 'defer'属性确保HTML解析完毕后再执行脚本 -->
+</body>
+</html>

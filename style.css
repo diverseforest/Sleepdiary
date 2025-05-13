@@ -1,0 +1,280 @@
+/* 全局样式 */
+body {
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; /* 使用更现代的无衬线字体栈 */
+    margin: 0; /* 移除默认的 body 边距 */
+    background-color: #f0f2f5; /* 更柔和的背景色 */
+    color: #333;
+    line-height: 1.6; /* 增加行高以提高可读性 */
+}
+
+/* 容器样式 */
+.container {
+    display: flex; /* 启用flex布局 */
+    flex-wrap: wrap; /* 允许子元素换行 */
+    gap: 20px; /* 子元素之间的间距 */
+    padding: 20px; /* 容器内边距 */
+    max-width: 1200px; /* 限制最大宽度，使其在大屏幕上不会过宽 */
+    margin: 0 auto; /* 容器居中显示 */
+}
+
+/* 头部和底部样式 */
+header, footer {
+    background-color: #4A5568; /* 更现代的深灰色 */
+    color: white;
+    padding: 15px 20px; /* 调整内边距 */
+    text-align: center;
+}
+
+header h1 {
+    margin: 0; /* 移除h1的默认边距 */
+    font-size: 1.8em; /* 调整标题大小 */
+}
+
+header button {
+    margin: 5px;
+    padding: 8px 12px; /* 调整按钮内边距 */
+    background-color: #63B3ED; /* 按钮背景色 */
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: background-color 0.3s ease; /* 添加过渡效果 */
+}
+
+header button:hover {
+    background-color: #4299E1; /* 鼠标悬停时的背景色 */
+}
+
+footer p {
+    margin: 0; /* 移除段落的默认边距 */
+    font-size: 0.9em; /* 调整字体大小 */
+}
+
+/* 输入区和输出区通用样式 */
+.input-section,
+.output-section {
+    flex: 1; /* flex子元素等分空间 */
+    min-width: 320px; /* 设置最小宽度，确保在小屏幕上也能合理显示 */
+    background-color: #fff;
+    padding: 25px; /* 调整内边距 */
+    border-radius: 8px;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.08); /* 更柔和的阴影 */
+}
+
+.input-section h2,
+.output-section h2 {
+    margin-top: 0; /* 移除区域标题的上边距 */
+    color: #2D3748; /* 标题颜色 */
+    border-bottom: 1px solid #E2E8F0; /* 标题下方分隔线 */
+    padding-bottom: 10px;
+    margin-bottom: 20px;
+}
+
+/* 表单组样式 */
+.form-group {
+    margin-bottom: 18px; /* 调整表单项间距 */
+}
+
+.form-group label {
+    display: block;
+    margin-bottom: 6px;
+    font-weight: bold;
+    color: #4A5568; /* 标签颜色 */
+}
+
+/* 输入框、选择框、文本域通用样式 */
+.form-group input[type="date"],
+.form-group input[type="time"],
+.form-group input[type="number"],
+.form-group select,
+.form-group textarea {
+    width: calc(100% - 24px); /* 宽度计算考虑内边距和边框 */
+    padding: 10px;
+    border: 1px solid #CBD5E0; /* 边框颜色 */
+    border-radius: 4px;
+    box-sizing: border-box; /* 确保 padding 和 border 不会增加元素的总宽度 */
+    transition: border-color 0.3s ease; /* 添加过渡效果 */
+}
+
+.form-group input[type="date"]:focus,
+.form-group input[type="time"]:focus,
+.form-group input[type="number"]:focus,
+.form-group select:focus,
+.form-group textarea:focus {
+    border-color: #63B3ED; /* 聚焦时的边框颜色 */
+    outline: none; /* 移除默认的聚焦轮廓 */
+}
+
+.form-group input[type="number"] {
+    width: auto; /* 数字输入框可以窄一些 */
+    min-width: 80px; /* 最小宽度 */
+}
+
+
+.form-group input[type="checkbox"] {
+    width: auto;
+    margin-right: 8px; /* 复选框与标签的间距 */
+    vertical-align: middle; /* 垂直居中对齐 */
+}
+.form-group label[for^="factor"] { /* 针对影响因素的label */
+    font-weight: normal; /* 普通字重 */
+    display: inline; /* 与checkbox在同一行 */
+}
+
+
+.form-group .inline-input {
+    display: inline-block;
+    width: auto;
+    margin-left: 10px;
+    padding: 8px; /* 调整内联输入框的内边距 */
+}
+
+.form-group .feedback {
+    font-size: 0.9em;
+    color: #718096; /* 反馈文字颜色 */
+    margin-top: 5px;
+}
+
+/* 按钮组样式 */
+.button-group {
+    margin-top: 25px; /* 按钮组与上方元素的间距 */
+    display: flex; /* 使用flex布局让按钮横向排列 */
+    gap: 10px; /* 按钮之间的间距 */
+}
+
+.button-group button {
+    padding: 10px 18px; /* 调整按钮内边距 */
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-weight: bold;
+    transition: opacity 0.3s ease; /* 添加过渡效果 */
+}
+
+.button-group button:hover {
+    opacity: 0.85; /* 鼠标悬停时降低透明度 */
+}
+
+#saveDiaryBtn {
+    background-color: #48BB78; /* 绿色 */
+    color: white;
+}
+
+#clearFormBtn {
+    background-color: #F6E05E; /* 黄色 */
+    color: #2D3748; /* 深色文字以保证对比度 */
+}
+
+#deleteDiaryBtn {
+    background-color: #F56565; /* 红色 */
+    color: white;
+    margin-left: auto; /* 将删除按钮推到右侧 */
+}
+
+/* 历史记录列表样式 */
+#historyList div {
+    border-bottom: 1px solid #E2E8F0; /* 分隔线颜色 */
+    padding: 12px 5px; /* 调整内边距 */
+    cursor: pointer;
+    transition: background-color 0.2s ease; /* 添加过渡效果 */
+    display: flex; /* 使用flex布局 */
+    justify-content: space-between; /* 内容两端对齐 */
+    align-items: center; /* 垂直居中 */
+}
+
+#historyList div:hover {
+    background-color: #f7fafc; /* 鼠标悬停时的背景色 */
+}
+
+#historyList div:last-child {
+    border-bottom: none; /* 移除最后一个条目的下边框 */
+}
+
+#historyList .history-item-date {
+    font-weight: bold;
+    color: #2D3748;
+}
+#historyList .history-item-tst,
+#historyList .history-item-se,
+#historyList .history-item-quality {
+    font-size: 0.9em;
+    color: #718096;
+    margin-left: 15px;
+}
+#historyList .history-item-actions button {
+    background: none;
+    border: none;
+    color: #F56565; /* 删除图标颜色 */
+    cursor: pointer;
+    padding: 5px;
+    font-size: 0.9em;
+}
+#historyList .history-item-actions button:hover {
+    color: #C53030; /* 鼠标悬停时颜色加深 */
+}
+
+
+/* 影响因素详情输入框样式 */
+.factor-group { /* 这个类在HTML中没有直接使用，但可以用于包裹每个因素的checkbox和text input */
+    margin-top: 10px;
+}
+.factor-group input[type="text"], /* 如果有这样的结构，可以这样选择 */
+.form-group input[type="text"].inline-input { /* 或者直接选择带有inline-input类的文本框 */
+    margin-left: 10px;
+    padding: 8px;
+    width: calc(100% - 150px); /* 根据标签和复选框宽度调整 */
+    max-width: 250px; /* 最大宽度限制 */
+    border: 1px solid #CBD5E0;
+    border-radius: 4px;
+}
+
+
+/* 当前指标区域样式 */
+#currentMetrics p {
+    margin: 8px 0; /* 指标项之间的间距 */
+    font-size: 0.95em;
+}
+#currentMetrics strong {
+    color: #2C5282; /* 指标数值颜色 */
+    margin-left: 5px;
+}
+
+/* 响应式设计调整 */
+@media (max-width: 768px) {
+    .container {
+        flex-direction: column; /* 在小屏幕上，输入区和输出区垂直排列 */
+    }
+
+    header {
+        padding: 10px;
+    }
+    header h1 {
+        font-size: 1.5em;
+    }
+    header button {
+        padding: 6px 10px;
+        font-size: 0.9em;
+    }
+
+    .input-section,
+    .output-section {
+        padding: 20px; /* 减小内边距 */
+    }
+
+    .form-group input[type="text"].inline-input {
+        width: calc(100% - 24px); /* 在小屏幕上，详情输入框占满剩余宽度 */
+        margin-left: 0;
+        margin-top: 5px;
+        display: block; /* 独占一行 */
+    }
+
+    .button-group {
+        flex-direction: column; /* 按钮垂直排列 */
+    }
+    .button-group button {
+        width: 100%; /* 按钮宽度占满 */
+    }
+    #deleteDiaryBtn {
+        margin-left: 0; /* 移除左边距 */
+    }
+}
