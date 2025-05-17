@@ -26,9 +26,21 @@
         </div>
     </header>
 
-    <!-- 主内容区域 -->
-    <div class="container">
-        <!-- 左侧/上半部分: 内容录入与编辑区 -->
+    <!-- 主内容区域 - 调整为单列布局 -->
+    <div class="container single-column">
+        
+        <!-- 1. 数据可视化区域 - 移到最上方 -->
+        <section class="visualization-section">
+            <h2>数据可视化</h2>
+            <div id="chartContainer" style="position: relative; height:40vh; width:100%; max-width: 1000px; margin: 20px auto;">
+                <canvas id="sleepDataChart"></canvas>
+                <!-- canvas元素用于Chart.js绘制图表 -->
+                <p id="chartNoDataMessage" style="text-align: center; display: none; padding-top: 20px;">暂无足够数据进行可视化。</p>
+                <!-- 当没有数据时显示此消息 -->
+            </div>
+        </section>
+
+        <!-- 2. 内容录入与编辑区 -->
         <section class="input-section">
             <h2>日记录入与编辑</h2>
 
@@ -151,8 +163,8 @@
             </div>
         </section>
 
-        <!-- 右侧/下半部分: 指标与历史区 -->
-        <section class="output-section">
+        <!-- 3. 当前日记睡眠指标区 -->
+        <section class="metrics-section">
             <h2>当前日记睡眠指标</h2>
             <!-- 实时计算的睡眠指标展示区 -->
             <div id="currentMetrics">
@@ -164,34 +176,22 @@
                 <p>睡眠效率 (SE): <strong id="metricSE">-</strong></p>
                 <p>醒后卧床时长: <strong id="metricTimeAwakeInBedDisplay">-</strong></p>
             </div>
+        </section>
 
-            <hr style="margin: 20px 0;">
-
+        <!-- 4. 历史日记区 -->
+        <section class="history-section">
             <h2>历史日记</h2>
             <!-- 历史日记列表展示区 -->
             <div id="historyList">
                 <!-- 历史记录将通过JavaScript动态填充到这里 -->
                 <p>暂无历史记录。</p>
             </div>
-
-            <hr style="margin: 20px 0;"> <!-- 分隔线 -->
-
-            <!-- 新增：数据可视化区域 -->
-            <h2>数据可视化</h2>
-            <div id="chartContainer" style="position: relative; height:40vh; width:80vw; max-width: 800px; margin: 20px auto;">
-                <canvas id="sleepDataChart"></canvas>
-                <!-- canvas元素用于Chart.js绘制图表 -->
-                <p id="chartNoDataMessage" style="text-align: center; display: none; padding-top: 20px;">暂无足够数据进行可视化。</p>
-                <!-- 当没有数据时显示此消息 -->
-            </div>
-            <!-- 结束：数据可视化区域 -->
-
         </section>
     </div>
 
     <!-- 底部提示区域 -->
     <footer>
-        <p><strong>重要提示:</strong> 您的睡眠数据仅存储在此浏览器中。清除浏览器数据、更换浏览器或设备将导致所有记录丢失。请务必定期使用“导出数据”功能备份您的记录。</p>
+        <p><strong>重要提示:</strong> 您的睡眠数据仅存储在此浏览器中。清除浏览器数据、更换浏览器或设备将导致所有记录丢失。请务必定期使用"导出数据"功能备份您的记录。</p>
         <!-- 数据存储风险提示 -->
     </footer>
 

@@ -278,3 +278,45 @@ footer p {
         margin-left: 0; /* 移除左边距 */
     }
 }
+
+/* 单列布局容器 - 添加在文件末尾 */
+.container.single-column {
+    display: flex;                /* 使用弹性布局 */
+    flex-direction: column;       /* 子元素垂直排列 */
+    max-width: 1000px;            /* 限制最大宽度 */
+    margin: 0 auto;               /* 水平居中 */
+    padding: 20px;                /* 内边距 */
+    gap: 30px;                    /* 各部分之间的间距 */
+}
+
+/* 各个部分的基本样式 */
+.visualization-section,
+.input-section,
+.metrics-section,
+.history-section {
+    width: 100%;                  /* 宽度占满容器 */
+    background-color: #fff;       /* 白色背景 */
+    border-radius: 8px;           /* 圆角边框 */
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1); /* 阴影效果 */
+    padding: 20px;                /* 内边距 */
+    margin-bottom: 20px;          /* 底部外边距 */
+}
+
+/* 数据可视化部分样式 */
+.visualization-section {
+    text-align: center;           /* 内容居中 */
+}
+
+/* 响应式调整 - 针对单列布局的额外调整 */
+@media (max-width: 768px) {
+    .container.single-column {
+        padding: 10px;            /* 小屏幕时减小内边距 */
+    }
+    
+    .visualization-section,
+    .input-section,
+    .metrics-section,
+    .history-section {
+        padding: 15px;            /* 小屏幕时减小内边距 */
+    }
+}
