@@ -125,8 +125,12 @@ document.addEventListener('DOMContentLoaded', () => {
         renderHistoryList();
 
         // 新增：应用初始化时渲染图表
-        const initialDiaries = getAllDiariesFromLocalStorage();
-        renderSleepChart(initialDiaries);
+        // 确保在DOM完全加载后再渲染图表
+        setTimeout(() => {
+            const initialDiaries = getAllDiariesFromLocalStorage();
+            renderSleepChart(initialDiaries);
+            console.log('图表初始化完成');
+        }, 100);
 
         console.log('睡眠日记应用已初始化完毕！');
     }
@@ -712,6 +716,7 @@ let sleepChartInstance = null; // 用于存储Chart.js图表实例
  * @param {Array<Object>} diaryEntries - 所有日记条目的数组
  */
 function renderSleepChart(diaryEntries) { // diaryEntries 是一个以日期为键的日记对象
+    console.log('开始渲染睡眠图表...');
     const chartCanvas = document.getElementById('sleepDataChart');
     const noDataMessage = document.getElementById('chartNoDataMessage');
 
@@ -720,6 +725,10 @@ function renderSleepChart(diaryEntries) { // diaryEntries 是一个以日期为�
         if (noDataMessage) noDataMessage.textContent = '图表容器丢失。';
         return;
     }
+    
+    // 确保Canvas元素可见
+    chartCanvas.style.display = 'block';
+    
     if (!noDataMessage) {
         console.error('图表无数据提示元素未找到!');
     }
@@ -733,6 +742,8 @@ function renderSleepChart(diaryEntries) { // diaryEntries 是一个以日期为�
     // 1. 数据处理和提取
     // 将日记对象的值（即每个日记条目）转换为数组
     const entriesArray = Object.values(diaryEntries); 
+    console.log(`处理图表数据：找到 ${entriesArray.length} 条记录`);
+    
     const sortedEntries = entriesArray
         .filter(entry => entry && entry.date) // 过滤掉无效的 entry 或没有日期的 entry
         .sort((a, b) => new Date(a.date) - new Date(b.date)); // 按日期对数组进行排序
