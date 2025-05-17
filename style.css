@@ -320,3 +320,61 @@ footer p {
         padding: 15px;            /* 小屏幕时减小内边距 */
     }
 }
+
+
+/* 水平布局的表单组 */
+.form-group-horizontal {
+    display: flex;
+    align-items: center;
+    margin-bottom: 10px;
+    flex-wrap: wrap; /* 在小屏幕上自动换行 */
+}
+
+.form-group-horizontal label {
+    min-width: 120px; /* 标签最小宽度 */
+    margin-right: 10px;
+}
+
+.form-group-horizontal input,
+.form-group-horizontal select {
+    flex: 1;
+    min-width: 150px;
+    max-width: 250px;
+}
+
+/* 用于并排放置多个表单组的容器 */
+.form-row {
+    display: flex;
+    flex-wrap: wrap;
+    margin: 0 -10px; /* 负边距创建间隙 */
+}
+
+.form-row .form-group-horizontal {
+    flex: 1;
+    min-width: 300px; /* 确保在小屏幕上有足够空间 */
+    padding: 0 10px;
+}
+
+/* 紧凑型字段集 */
+.compact-fieldset {
+    padding: 10px;
+    margin-bottom: 15px;
+}
+
+.compact-fieldset legend {
+    padding: 0 5px;
+    font-weight: bold;
+}
+
+/* 影响因素复选框组的样式 */
+.factors-group {
+    display: flex;
+    flex-wrap: wrap;
+}
+
+.factor-item {
+    display: flex;
+    align-items: center;
+    margin-right: 15px;
+    margin-bottom: 5px;
+}

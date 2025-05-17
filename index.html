@@ -44,112 +44,127 @@
         <section class="input-section">
             <h2>日记录入与编辑</h2>
 
-            <div class="form-group">
+            <div class="form-group-horizontal">
                 <label for="datePicker">选择日期:</label>
                 <input type="date" id="datePicker">
                 <!-- 日期选择器 -->
             </div>
 
-            <fieldset>
+            <fieldset class="compact-fieldset">
                 <legend>睡眠时段详细信息</legend>
-                <!-- 引导式时间录入 -->
-                <div class="form-group">
-                    <label for="bedTime">A. 准备睡觉时间 (昨晚):</label>
-                    <input type="time" id="bedTime">
-                    <!-- 准备睡觉时间输入框 -->
+                <!-- 引导式时间录入 - 重新组织为更紧凑的布局 -->
+                
+                <!-- 第一行：准备睡觉时间和入睡耗时 -->
+                <div class="form-row">
+                    <div class="form-group-horizontal">
+                        <label for="bedTime">准备睡觉时间:</label>
+                        <input type="time" id="bedTime">
+                    </div>
+                    
+                    <div class="form-group-horizontal">
+                        <label for="sleepLatency">入睡耗时(分钟):</label>
+                        <input type="number" id="sleepLatency" min="0" step="5" placeholder="例如: 15">
+                        <!-- 入睡耗时输入框，单位分钟 -->
+                    </div>
                 </div>
-
-                <div class="form-group">
-                    <label for="sleepLatency">B. 入睡耗时 (估算):</label>
-                    <input type="number" id="sleepLatency" min="0" step="5" placeholder="例如: 15"> 分钟
-                    <!-- 入睡耗时输入框，单位分钟 -->
-                    <p class="feedback" id="calculatedSleepTime">估算入睡时间点：--:--</p>
-                    <!-- 即时反馈：估算入睡时间点 -->
+                <p class="feedback" id="calculatedSleepTime">估算入睡时间点：--:--</p>
+                <!-- 即时反馈：估算入睡时间点 -->
+                
+                <!-- 第二行：夜间觉醒次数和总时长 -->
+                <div class="form-row">
+                    <div class="form-group-horizontal">
+                        <label for="awakeningsCount">夜间觉醒次数:</label>
+                        <input type="number" id="awakeningsCount" min="0" value="0">
+                    </div>
+                    
+                    <div class="form-group-horizontal">
+                        <label for="awakeningsDuration">觉醒总时长(分钟):</label>
+                        <input type="number" id="awakeningsDuration" min="0" step="5" placeholder="例如: 10">
+                    </div>
                 </div>
-
-                <div class="form-group">
-                    <label for="awakeningsCount">C. 夜间觉醒次数:</label>
-                    <input type="number" id="awakeningsCount" min="0" value="0">
-                    <!-- 夜间觉醒次数输入框 -->
+                
+                <!-- 第三行：清醒时间和离开卧床时间 -->
+                <div class="form-row">
+                    <div class="form-group-horizontal">
+                        <label for="wakeUpTime">最终清醒时间:</label>
+                        <input type="time" id="wakeUpTime">
+                    </div>
+                    
+                    <div class="form-group-horizontal">
+                        <label for="outOfBedTime">离开卧床时间:</label>
+                        <input type="time" id="outOfBedTime">
+                    </div>
                 </div>
-
-                <div class="form-group">
-                    <label for="awakeningsDuration">D. 夜间觉醒总时长 (估算):</label>
-                    <input type="number" id="awakeningsDuration" min="0" step="5" placeholder="例如: 10"> 分钟
-                    <!-- 夜间觉醒总时长输入框，单位分钟 -->
-                </div>
-
-                <div class="form-group">
-                    <label for="wakeUpTime">E. 最终清醒时间 (今早):</label>
-                    <input type="time" id="wakeUpTime">
-                    <!-- 最终清醒时间输入框 -->
-                </div>
-
-                <div class="form-group">
-                    <label for="outOfBedTime">F. 离开卧床时间 (今早):</label>
-                    <input type="time" id="outOfBedTime">
-                    <!-- 离开卧床时间输入框 -->
-                    <p class="feedback" id="timeAwakeInBed">醒后卧床：- 分钟</p>
-                    <!-- 即时反馈：醒后卧床时长 -->
-                </div>
+                <p class="feedback" id="timeAwakeInBed">醒后卧床：- 分钟</p>
+                <!-- 即时反馈：醒后卧床时长 -->
             </fieldset>
 
-            <fieldset>
+            <fieldset class="compact-fieldset">
                 <legend>关键影响因素</legend>
-                <!-- 关键影响因素标记 -->
-                <div class="form-group">
-                    <input type="checkbox" id="factorCaffeine"> <label for="factorCaffeine">咖啡因</label>
-                    <input type="text" id="factorCaffeineDetail" placeholder="时间/量 (可选)" class="inline-input" style="display:none;">
-                </div>
-                <div class="form-group">
-                    <input type="checkbox" id="factorAlcohol"> <label for="factorAlcohol">酒精</label>
-                    <input type="text" id="factorAlcoholDetail" placeholder="时间/量 (可选)" class="inline-input" style="display:none;">
-                </div>
-                <div class="form-group">
-                    <input type="checkbox" id="factorMedication"> <label for="factorMedication">药物</label>
-                    <input type="text" id="factorMedicationDetail" placeholder="名称/剂量 (可选)" class="inline-input" style="display:none;">
-                </div>
-                <div class="form-group">
-                    <input type="checkbox" id="factorExercise"> <label for="factorExercise">运动</label>
-                    <input type="text" id="factorExerciseDetail" placeholder="时间/强度 (可选)" class="inline-input" style="display:none;">
-                </div>
-                 <div class="form-group">
-                    <input type="checkbox" id="factorDaytimeDrowsiness"> <label for="factorDaytimeDrowsiness">日间困倦</label>
-                    <input type="text" id="factorDaytimeDrowsinessDetail" placeholder="程度/发生时间 (可选)" class="inline-input" style="display:none;">
+                <!-- 关键影响因素标记 - 改为横向排列 -->
+                <div class="factors-group">
+                    <div class="factor-item">
+                        <input type="checkbox" id="factorCaffeine"> 
+                        <label for="factorCaffeine">咖啡因</label>
+                        <input type="text" id="factorCaffeineDetail" placeholder="时间/量" class="inline-input" style="display:none;">
+                    </div>
+                    <div class="factor-item">
+                        <input type="checkbox" id="factorAlcohol"> 
+                        <label for="factorAlcohol">酒精</label>
+                        <input type="text" id="factorAlcoholDetail" placeholder="时间/量" class="inline-input" style="display:none;">
+                    </div>
+                    <div class="factor-item">
+                        <input type="checkbox" id="factorMedication"> 
+                        <label for="factorMedication">药物</label>
+                        <input type="text" id="factorMedicationDetail" placeholder="名称/剂量" class="inline-input" style="display:none;">
+                    </div>
+                    <div class="factor-item">
+                        <input type="checkbox" id="factorExercise"> 
+                        <label for="factorExercise">运动</label>
+                        <input type="text" id="factorExerciseDetail" placeholder="时间/强度" class="inline-input" style="display:none;">
+                    </div>
+                    <div class="factor-item">
+                        <input type="checkbox" id="factorDaytimeDrowsiness"> 
+                        <label for="factorDaytimeDrowsiness">日间困倦</label>
+                        <input type="text" id="factorDaytimeDrowsinessDetail" placeholder="程度/时间" class="inline-input" style="display:none;">
+                    </div>
                 </div>
             </fieldset>
 
-            <fieldset>
+            <fieldset class="compact-fieldset">
                 <legend>主观评价</legend>
-                <!-- 主观评价录入 -->
-                <div class="form-group">
-                    <label for="sleepQuality">睡眠品质 (1-5级):</label>
-                    <select id="sleepQuality">
-                        <option value="">--选择--</option>
-                        <option value="1">1 - 很差</option>
-                        <option value="2">2 - 较差</option>
-                        <option value="3">3 - 一般</option>
-                        <option value="4">4 - 较好</option>
-                        <option value="5">5 - 很好</option>
-                    </select>
-                </div>
-                <div class="form-group">
-                    <label for="daytimeAlertness">白天精神 (1-5级):</label>
-                    <select id="daytimeAlertness">
-                        <option value="">--选择--</option>
-                        <option value="1">1 - 很疲惫</option>
-                        <option value="2">2 - 较疲惫</option>
-                        <option value="3">3 - 一般</option>
-                        <option value="4">4 - 精力充沛</option>
-                        <option value="5">5 - 非常充沛</option>
-                    </select>
+                <!-- 主观评价录入 - 改为横向排列 -->
+                <div class="form-row">
+                    <div class="form-group-horizontal">
+                        <label for="sleepQuality">睡眠品质 (1-5级):</label>
+                        <select id="sleepQuality">
+                            <option value="">--选择--</option>
+                            <option value="1">1 - 很差</option>
+                            <option value="2">2 - 较差</option>
+                            <option value="3">3 - 一般</option>
+                            <option value="4">4 - 较好</option>
+                            <option value="5">5 - 很好</option>
+                        </select>
+                    </div>
+                    
+                    <div class="form-group-horizontal">
+                        <label for="daytimeAlertness">白天精神 (1-5级):</label>
+                        <select id="daytimeAlertness">
+                            <option value="">--选择--</option>
+                            <option value="1">1 - 很疲惫</option>
+                            <option value="2">2 - 较疲惫</option>
+                            <option value="3">3 - 一般</option>
+                            <option value="4">4 - 精力充沛</option>
+                            <option value="5">5 - 非常充沛</option>
+                        </select>
+                    </div>
                 </div>
             </fieldset>
 
             <div class="form-group">
                 <label for="notes">备注:</label>
-                <textarea id="notes" rows="3" placeholder="记录其他影响因素或感受..."></textarea>
-                <!-- 备注输入框 -->
+                <textarea id="notes" rows="2" placeholder="记录其他影响因素或感受..."></textarea>
+                <!-- 备注输入框 - 减少行数 -->
             </div>
 
             <div class="button-group">
@@ -166,15 +181,16 @@
         <!-- 3. 当前日记睡眠指标区 -->
         <section class="metrics-section">
             <h2>当前日记睡眠指标</h2>
-            <!-- 实时计算的睡眠指标展示区 -->
-            <div id="currentMetrics">
-                <p>卧床时间 (TIB): <strong id="metricTIB">-</strong></p>
-                <p>入睡潜伏期 (SL): <strong id="metricSL">-</strong></p>
-                <p>实际入睡时间点: <strong id="metricActualSleepTime">-</strong></p>
-                <p>睡后觉醒时长 (WASO): <strong id="metricWASO">-</strong></p>
-                <p>睡眠总时长 (TST): <strong id="metricTST">-</strong></p>
-                <p>睡眠效率 (SE): <strong id="metricSE">-</strong></p>
-                <p>醒后卧床时长: <strong id="metricTimeAwakeInBedDisplay">-</strong></p>
+            <!-- 实时计算的睡眠指标展示区 - 调整为每行两个指标 -->
+            <div id="currentMetrics" style="display: flex; flex-wrap: wrap;">
+                <p style="flex: 0 0 50%; min-width: 250px; box-sizing: border-box; padding-right: 10px;">卧床时间 (TIB): <strong id="metricTIB">-</strong></p>
+                <p style="flex: 0 0 50%; min-width: 250px; box-sizing: border-box; padding-right: 10px;">入睡潜伏期 (SL): <strong id="metricSL">-</strong></p>
+                <p style="flex: 0 0 50%; min-width: 250px; box-sizing: border-box; padding-right: 10px;">实际入睡时间点: <strong id="metricActualSleepTime">-</strong></p>
+                <p style="flex: 0 0 50%; min-width: 250px; box-sizing: border-box; padding-right: 10px;">睡后觉醒时长 (WASO): <strong id="metricWASO">-</strong></p>
+                <p style="flex: 0 0 50%; min-width: 250px; box-sizing: border-box; padding-right: 10px;">睡眠总时长 (TST): <strong id="metricTST">-</strong></p>
+                <p style="flex: 0 0 50%; min-width: 250px; box-sizing: border-box; padding-right: 10px;">睡眠效率 (SE): <strong id="metricSE">-</strong></p>
+                <p style="flex: 0 0 50%; min-width: 250px; box-sizing: border-box; padding-right: 10px;">醒后卧床时长: <strong id="metricTimeAwakeInBedDisplay">-</strong></p>
+                <p style="flex: 0 0 50%; min-width: 250px; box-sizing: border-box; padding-right: 10px;"></p><!-- 空占位元素，保持最后一行对齐 -->
             </div>
         </section>
 
