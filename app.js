@@ -716,98 +716,96 @@ let sleepChartInstance = null; // 用于存储Chart.js图表实例
  * @param {Array<Object>} diaryEntries - 所有日记条目的数组
  */
 function renderSleepChart(diaryEntries) { // diaryEntries 是一个以日期为键的日记对象
-    console.log('开始渲染睡眠图表...');
-    const chartCanvas = document.getElementById('sleepDataChart');
-    const noDataMessage = document.getElementById('chartNoDataMessage');
-
-    if (!chartCanvas) {
-        console.error('图表 Canvas 元素未找到!');
-        if (noDataMessage) noDataMessage.textContent = '图表容器丢失。';
+    console.log('正在渲染睡眠图表...');
+    
+    // 如果没有日记数据，则不渲染图表
+    if (!diaryEntries || Object.keys(diaryEntries).length === 0) {
+        console.log('没有日记数据，跳过图表渲染');
         return;
     }
     
-    // 确保Canvas元素可见
-    chartCanvas.style.display = 'block';
+    // 准备图表数据
+    const dates = [];
+    const tstValues = []; // 睡眠总时长
+    const seValues = [];  // 睡眠效率
     
-    if (!noDataMessage) {
-        console.error('图表无数据提示元素未找到!');
+    // 基准值常量
+    const TST_BASELINE = 4.5; // 睡眠总时长基准值（小时）
+    const SE_BASELINE = 85;   // 睡眠效率基准值（百分比）
+    
+    // 对日记按日期排序（从早到晚）
+    const entriesArray = Object.values(diaryEntries);
+    const sortedDiaries = entriesArray
+        .filter(entry => entry && entry.date)
+        .sort((a, b) => new Date(a.date) - new Date(b.date));
+    
+    // 提取最近14天的数据（如果有）
+    const recentDiaries = sortedDiaries.slice(-14);
+    
+    // 从日记中提取数据并应用变换（减去基准值）
+    recentDiaries.forEach(diary => {
+        // 格式化日期为更友好的显示格式（月/日）
+        const dateObj = new Date(diary.date);
+        const formattedDate = `${dateObj.getMonth() + 1}/${dateObj.getDate()}`;
+        dates.push(formattedDate);
+        
+        // 应用数据变换：减去基准值，这样图表将显示与基准的差异
+        // 睡眠总时长减去4.5小时
+        const tstDiff = diary.metrics?.TST ? (diary.metrics.TST - TST_BASELINE) : null;
+        tstValues.push(tstDiff);
+        
+        // 睡眠效率减去85%
+        const seDiff = diary.metrics?.SE ? (diary.metrics.SE - SE_BASELINE) : null;
+        seValues.push(seDiff);
+    });
+    
+    // 获取图表容器
+    const ctx = document.getElementById('sleepDataChart');
+    if (!ctx) {
+        console.error('找不到图表容器元素 #sleepDataChart');
+        return;
     }
-
-    // 0. 检查并销毁已存在的图表实例，以便重新渲染
+    
+    // 如果已经有图表实例，先销毁它
     if (sleepChartInstance) {
         sleepChartInstance.destroy();
-        sleepChartInstance = null;
     }
-
-    // 1. 数据处理和提取
-    // 将日记对象的值（即每个日记条目）转换为数组
-    const entriesArray = Object.values(diaryEntries); 
-    console.log(`处理图表数据：找到 ${entriesArray.length} 条记录`);
     
-    const sortedEntries = entriesArray
-        .filter(entry => entry && entry.date) // 过滤掉无效的 entry 或没有日期的 entry
-        .sort((a, b) => new Date(a.date) - new Date(b.date)); // 按日期对数组进行排序
-
-    // 提取图表所需的标签（日期）、睡眠总时长(TST)和睡眠效率(SE)
-    const labels = sortedEntries.map(entry => entry.date); // X轴：日期
-    // entry.metrics.TST 应为数值 (小时), entry.metrics.SE 应为数值 (百分比)
-    const tstData = sortedEntries.map(entry => (entry.metrics && typeof entry.metrics.TST === 'number') ? entry.metrics.TST : 0);
-    const seData = sortedEntries.map(entry => (entry.metrics && typeof entry.metrics.SE === 'number') ? entry.metrics.SE : 0);
-
-    // 2. 检查是否有足够的数据
-    if (labels.length < 1) { // 如果没有有效数据点
-        chartCanvas.style.display = 'none'; // 隐藏canvas
-        if (noDataMessage) {
-            noDataMessage.style.display = 'block'; // 显示无数据提示
-            noDataMessage.textContent = '暂无足够数据进行可视化。'; // 确保消息正确
-        }
-        return;
-    } else {
-        chartCanvas.style.display = 'block'; // 显示canvas
-        if (noDataMessage) noDataMessage.style.display = 'none'; // 隐藏无数据提示
-    }
-
-    // 3. Chart.js 配置对象
-    const chartConfig = {
-        type: 'bar', // 基础类型，但我们会混合使用
+    // 创建新的图表
+    sleepChartInstance = new Chart(ctx, {
+        type: 'line',
         data: {
-            labels: labels, // X轴标签 (日期)
+            labels: dates,
             datasets: [
                 {
-                    label: '睡眠总时长 (小时)', // 数据系列1的标签
-                    data: tstData,           // 数据系列1的数据
-                    type: 'bar',             // 此数据系列为柱状图
-                    backgroundColor: 'rgba(54, 162, 235, 0.6)', // 柱状图填充颜色
-                    borderColor: 'rgba(54, 162, 235, 1)',     // 柱状图边框颜色
-                    borderWidth: 1,
-                    yAxisID: 'yTST',         // 关联到左侧Y轴
-                    order: 2 // 确保柱状图在折线图后面，避免遮挡
+                    label: '睡眠总时长与基准(4.5小时)的差异',
+                    data: tstValues,
+                    borderColor: 'rgba(75, 192, 192, 1)',
+                    backgroundColor: 'rgba(75, 192, 192, 0.2)',
+                    borderWidth: 2,
+                    tension: 0.1,
+                    yAxisID: 'y'
                 },
                 {
-                    label: '睡眠效率 (%)',    // 数据系列2的标签
-                    data: seData,            // 数据系列2的数据
-                    type: 'line',            // 此数据系列为折线图
-                    borderColor: 'rgba(255, 99, 132, 1)',    // 折线颜色
-                    backgroundColor: 'rgba(255, 99, 132, 0.2)',// 折线下方填充颜色 (可选)
-                    tension: 0.1,            // 折线平滑度 (0表示不平滑)
-                    fill: false,             // 是否填充折线下方区域
-                    yAxisID: 'ySE',          // 关联到右侧Y轴
-                    order: 1 // 确保折线图在前面
+                    label: '睡眠效率与基准(85%)的差异',
+                    data: seValues,
+                    borderColor: 'rgba(153, 102, 255, 1)',
+                    backgroundColor: 'rgba(153, 102, 255, 0.2)',
+                    borderWidth: 2,
+                    tension: 0.1,
+                    yAxisID: 'y1'
                 }
             ]
         },
         options: {
-            responsive: true,       // 图表将响应容器大小变化
-            maintainAspectRatio: false, // 允许图表高度独立于宽度变化
-            interaction: {
-                mode: 'index',
-                intersect: false,
-            },
-            stacked: false,
+            responsive: true,
             plugins: {
                 title: {
                     display: true,
-                    text: '睡眠总时长与睡眠效率趋势图'
+                    text: '睡眠指标与基准值对比图',
+                    font: {
+                        size: 16
+                    }
                 },
                 tooltip: {
                     callbacks: {
@@ -817,11 +815,14 @@ function renderSleepChart(diaryEntries) { // diaryEntries 是一个以日期为�
                                 label += ': ';
                             }
                             if (context.parsed.y !== null) {
-                                label += context.parsed.y.toFixed(context.dataset.yAxisID === 'yTST' ? 2 : 1); // TST保留两位小数，SE保留一位
-                                if (context.dataset.yAxisID === 'yTST') {
-                                    label += ' 小时';
-                                } else if (context.dataset.yAxisID === 'ySE') {
-                                    label += ' %';
+                                if (context.datasetIndex === 0) { // 睡眠总时长
+                                    // 显示原始值和与基准的差异
+                                    const originalValue = context.parsed.y + TST_BASELINE;
+                                    label += `${context.parsed.y.toFixed(1)}小时 (实际: ${originalValue.toFixed(1)}小时)`;
+                                } else { // 睡眠效率
+                                    // 显示原始值和与基准的差异
+                                    const originalValue = context.parsed.y + SE_BASELINE;
+                                    label += `${context.parsed.y.toFixed(1)}% (实际: ${originalValue.toFixed(1)}%)`;
                                 }
                             }
                             return label;
@@ -836,72 +837,69 @@ function renderSleepChart(diaryEntries) { // diaryEntries 是一个以日期为�
                         text: '日期'
                     }
                 },
-                yTST: {
+                y: {
                     type: 'linear',
                     display: true,
                     position: 'left',
                     title: {
                         display: true,
-                        text: '睡眠总时长 (小时)'
+                        text: '睡眠总时长差异(小时)'
                     },
-                    beginAtZero: true,
-                    // suggestedMax: 12, // 可根据常见睡眠时长调整
                     grid: {
-                        drawOnChartArea: true,
+                        drawOnChartArea: false, // 只在左侧显示网格线
                     }
                 },
-                ySE: {
+                y1: {
                     type: 'linear',
                     display: true,
                     position: 'right',
                     title: {
                         display: true,
-                        text: '睡眠效率 (%)'
+                        text: '睡眠效率差异(%)'
                     },
-                    min: 0,
-                    max: 100,
-                    beginAtZero: true,
                     grid: {
-                        drawOnChartArea: false, // 避免与左轴网格线重叠
+                        drawOnChartArea: false, // 只在右侧显示网格线
                     }
                 }
             }
-        }
-    };
-
-    // 4. 创建新的Chart实例
-    const ctx = chartCanvas.getContext('2d');
-    sleepChartInstance = new Chart(ctx, chartConfig);
-}
-
-// 假设这是您加载历史记录的函数
-function loadAndDisplayHistory() {
-    const diaries = JSON.parse(localStorage.getItem('sleepDiaries')) || [];
-    // ... (您现有加载和显示历史列表的代码) ...
-
-    renderSleepChart(diaries); // <--- 新增：加载历史后渲染图表
-}
-
-// 假设这是您保存日记的事件监听器
-document.getElementById('saveDiaryBtn').addEventListener('click', function() {
-    // ... (您现有保存日记的逻辑) ...
-    // 假设 newDiaryEntry 是新创建的日记对象，并且已添加到 diaries 数组并保存到 localStorage
+        },
+        plugins: [{
+            id: 'customZeroLine',
+            beforeDraw: function(chart) {
+                const ctx = chart.ctx;
+                const yAxis = chart.scales.y;
+                const y1Axis = chart.scales.y1;
+                
+                // 绘制睡眠总时长的零线（基准线）
+                const zeroY = yAxis.getPixelForValue(0);
+                ctx.save();
+                ctx.beginPath();
+                ctx.moveTo(chart.chartArea.left, zeroY);
+                ctx.lineTo(chart.chartArea.right, zeroY);
+                ctx.lineWidth = 1;
+                ctx.strokeStyle = 'rgba(75, 192, 192, 0.5)';
+                ctx.stroke();
+                
+                // 绘制睡眠效率的零线（基准线）
+                const zeroY1 = y1Axis.getPixelForValue(0);
+                ctx.beginPath();
+                ctx.moveTo(chart.chartArea.left, zeroY1);
+                ctx.lineTo(chart.chartArea.right, zeroY1);
+                ctx.lineWidth = 1;
+                ctx.strokeStyle = 'rgba(153, 102, 255, 0.5)';
+                ctx.stroke();
+                
+                // 添加基准线标签
+                ctx.font = '10px Arial';
+                ctx.fillStyle = 'rgba(75, 192, 192, 1)';
+                ctx.fillText('基准线(4.5小时)', chart.chartArea.left + 5, zeroY - 5);
+                ctx.fillStyle = 'rgba(153, 102, 255, 1)';
+                ctx.fillText('基准线(85%)', chart.chartArea.right - 80, zeroY1 - 5);
+                
+                ctx.restore();
+            }
+        }]
+    });
     
-    const allDiaries = JSON.parse(localStorage.getItem('sleepDiaries')) || []; // 重新获取所有数据
-    renderSleepChart(allDiaries); // <--- 新增：保存后更新图表
-});
-
-// 假设这是您处理数据导入的逻辑
-// (在导入成功并更新了 localStorage 之后)
-// function handleImportSuccess() {
-//     const allDiaries = JSON.parse(localStorage.getItem('sleepDiaries')) || [];
-//     loadAndDisplayHistory(); // 这会刷新列表并调用 renderSleepChart
-//     // 或者直接调用 renderSleepChart(allDiaries);
-// }
-
-
-// 页面加载时初始化
-document.addEventListener('DOMContentLoaded', function() {
-    // ... (您现有的DOMContentLoaded逻辑，例如加载历史日记) ...
-    loadAndDisplayHistory(); // 这应该会调用 renderSleepChart
-});
+    console.log('睡眠图表渲染完成');
+}
