@@ -66,8 +66,10 @@ document.addEventListener('DOMContentLoaded', () => {
     let sleepChartInstance = null; // 新增：用于存储Chart.js图表实例
     let lastCalculatedTSTHours = 0; // 新增：用于存储上次计算的睡眠总时长（小时，数值型）
     let lastCalculatedSEPercentage = 0; // 新增：用于存储上次计算的睡眠效率（百分比，数值型）
+    let historyPageSize = 7; // 新增：历史记录每页显示的条数
+    let historyCurrentPage = 1; // 新增：当前显示的历史记录页码
 
-    // --- 初始化函数 ---
+    // 初始化函数
     function initializeApp() {
         // 1. 设置日期选择器默认值为今天
         const today = new Date();
@@ -498,7 +500,12 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
-        sortedDates.forEach(date => {
+        // 计算当前页应显示的记录
+        const startIndex = 0;
+        const endIndex = historyPageSize * historyCurrentPage;
+        const currentPageDates = sortedDates.slice(startIndex, endIndex);
+
+        currentPageDates.forEach(date => {
             const entry = allDiaries[date];
             const listItem = document.createElement('div');
             listItem.classList.add('history-item');
@@ -513,7 +520,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 const qualityOption = sleepQualitySelect.querySelector(`option[value="${entry.sleepQuality}"]`);
                 qualityText = qualityOption ? qualityOption.textContent.split(' - ')[1] : entry.sleepQuality; // 显示 "很好" 而不是 "5 - 很好"
             }
-
 
             listItem.innerHTML = `
                 <div>
@@ -541,6 +547,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     deleteDiaryFromLocalStorage(dateToDelete);
                     renderHistoryList(); // 重新渲染列表
                     // 如果删除的是当前正在编辑的日记，则清空表单
+
                     if (datePicker.value === dateToDelete) {
                         clearForm(false); // 清空表单，但不改变日期
                         // 当删除当前编辑的日记后，指标也应该基于空表单重新计算并显示
@@ -555,6 +562,19 @@ document.addEventListener('DOMContentLoaded', () => {
 
             historyListDiv.appendChild(listItem);
         });
+
+        // 如果还有更多记录未显示，添加"加载更多"按钮
+        if (sortedDates.length > endIndex) {
+            const loadMoreBtn = document.createElement('button');
+            loadMoreBtn.id = 'loadMoreHistoryBtn';
+            loadMoreBtn.textContent = '加载更多';
+            loadMoreBtn.classList.add('load-more-btn');
+            loadMoreBtn.addEventListener('click', () => {
+                historyCurrentPage++;
+                renderHistoryList();
+            });
+            historyListDiv.appendChild(loadMoreBtn);
+        }
     }
 
     // 导出数据
