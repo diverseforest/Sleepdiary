@@ -771,6 +771,7 @@ function renderSleepChart(diaryEntries) { // diaryEntries 是一个以日期为�
     // 提取图表所需的标签（日期）、睡眠总时长(TST)和睡眠效率(SE)
     const labels = sortedEntries.map(entry => entry.date.substring(5)); // X轴：日期（只显示月-日）
     
+    
     // 基准值
     const TST_BASELINE = 4.5; // 睡眠总时长基准值（小时）
     const SE_BASELINE = 85;   // 睡眠效率基准值（百分比）
@@ -798,21 +799,23 @@ function renderSleepChart(diaryEntries) { // diaryEntries 是一个以日期为�
 
     // 3. Chart.js 配置对象
     const chartConfig = {
-        type: 'line', // 改为线图
+        type: 'bar', // 修改为柱状图
+
         data: {
             labels: labels, // X轴标签 (日期)
             datasets: [
                 {
                     label: '睡眠总时长',      // 数据系列1的标签
                     data: tstTransformed,    // 使用变换后的数据
-                    borderColor: 'rgba(75, 192, 192, 1)',    // 折线颜色
-                    backgroundColor: 'rgba(75, 192, 192, 0.2)', // 折线下方填充颜色
-                    tension: 0.1,            // 折线平滑度
+                    backgroundColor: 'rgba(75, 192, 192, 0.5)', // 柱状图填充颜色
+                    borderColor: 'rgba(75, 192, 192, 1)',    // 柱状图边框颜色
+                    borderWidth: 1,          // 柱状图边框宽度
                     yAxisID: 'y-tst',        // 关联到左侧Y轴
                 },
                 {
                     label: '睡眠效率',        // 数据系列2的标签
                     data: seTransformed,     // 使用变换后的数据
+                    type: 'line',            // 保持睡眠效率为折线图
                     borderColor: 'rgba(153, 102, 255, 1)',    // 折线颜色
                     backgroundColor: 'rgba(153, 102, 255, 0.2)', // 折线下方填充颜色
                     tension: 0.1,            // 折线平滑度
@@ -883,7 +886,7 @@ function renderSleepChart(diaryEntries) { // diaryEntries 是一个以日期为�
                     grid: {
                         color: function(context) {
                             if (context.tick.value === 0) {
-                                return 'rgba(255, 0, 0, 0.5)'; // 红色基准线
+                                return 'rgba(75, 192, 192, 0.5)'; // 基准线
                             }
                             return 'rgba(0, 0, 0, 0.1)';
                         },
