@@ -1,3 +1,212 @@
+const DATA_VERSION = 1;
+const DIARY_STORAGE_KEY = 'sleepDiaryEntries';
+const LEGACY_ARRAY_KEY = 'sleepDiaries';
+
+function parseTimeToMinutes(t) {
+    if (!t || typeof t !== 'string' || !t.includes(':')) return null;
+    const [h, m] = t.split(':').map(Number);
+    if (Number.isNaN(h) || Number.isNaN(m)) return null;
+    return h * 60 + m;
+}
+
+function addMinutes(timeStr, minutes) {
+    const base = parseTimeToMinutes(timeStr);
+    if (base === null) return null;
+    const total = (base + minutes) % (24 * 60);
+    const h = String(Math.floor(total / 60)).padStart(2, '0');
+    const m = String(total % 60).padStart(2, '0');
+    return `${h}:${m}`;
+}
+
+function normalizeEntry(raw) {
+    const date = raw.date;
+    const bedtime = raw.bedTime || '';
+    const sleepLatencyMin = raw.sleepLatency === '' ? null : (parseInt(raw.sleepLatency, 10) || 0);
+    const awakeningsCount = raw.awakeningsCount === '' ? null : (parseInt(raw.awakeningsCount, 10) || 0);
+    const awakeningsDurationMin = raw.awakeningsDuration === '' ? null : (parseInt(raw.awakeningsDuration, 10) || 0);
+    const wakeTime = raw.wakeUpTime || '';
+    const outOfBedTime = raw.outOfBedTime || '';
+    const notes = raw.notes || '';
+    const factors = raw.factors || {};
+    const sleepQuality = raw.sleepQuality || '';
+    const daytimeAlertness = raw.daytimeAlertness || '';
+    return { date, bedtime, sleepLatencyMin, awakeningsCount, awakeningsDurationMin, wakeTime, outOfBedTime, notes, factors, sleepQuality, daytimeAlertness, version: DATA_VERSION };
+}
+
+function calculateMetrics(entry) {
+    const bedM = parseTimeToMinutes(entry.bedtime);
+    const outM = parseTimeToMinutes(entry.outOfBedTime);
+    const wakeM = parseTimeToMinutes(entry.wakeTime);
+    const sl = typeof entry.sleepLatencyMin === 'number' ? entry.sleepLatencyMin : null;
+    const waso = typeof entry.awakeningsDurationMin === 'number' ? entry.awakeningsDurationMin : null;
+    let tib = null;
+    if (bedM !== null && outM !== null) {
+        tib = outM >= bedM ? (outM - bedM) : ((24 * 60 - bedM) + outM);
+    }
+    let sleepStartM = null;
+    if (bedM !== null && sl !== null) {
+        sleepStartM = (bedM + sl) % (24 * 60);
+    }
+    let asleepMins = null;
+    if (sleepStartM !== null && wakeM !== null) {
+        asleepMins = wakeM >= sleepStartM ? (wakeM - sleepStartM) : ((24 * 60 - sleepStartM) + wakeM);
+    }
+    let tst = null;
+    if (asleepMins !== null && waso !== null) {
+        tst = asleepMins - waso;
+        if (tst < 0) tst = 0;
+    }
+    let se = null;
+    if (tst !== null && tib !== null && tib > 0) {
+        se = (tst / tib) * 100;
+    }
+    let awakeInBed = null;
+    if (wakeM !== null && outM !== null) {
+        awakeInBed = outM >= wakeM ? (outM - wakeM) : ((24 * 60 - wakeM) + outM);
+    }
+    return {
+        tibMinutes: tib,
+        tstMinutes: tst,
+        wasoMinutes: waso,
+        sePercent: se,
+        awakeInBedMinutes: awakeInBed,
+        sleepStartTime: sleepStartM !== null ? `${String(Math.floor(sleepStartM / 60)).padStart(2, '0')}:${String(sleepStartM % 60).padStart(2, '0')}` : null
+    };
+}
+
+function aggregateWeek(entries) {
+    const arr = Array.isArray(entries) ? entries : Object.values(entries || {});
+    const valid = arr.filter(e => e && e.date);
+    const byDate = valid.sort((a, b) => new Date(a.date) - new Date(b.date));
+    const last7 = byDate.slice(-7);
+    if (last7.length === 0) return { count: 0 };
+    let sumTST = 0, sumSE = 0, cntTST = 0, cntSE = 0, anomalies = [];
+    for (const e of last7) {
+        const normalized = e.normalized ? e.normalized : normalizeEntry({
+            date: e.date,
+            bedTime: e.bedTime,
+            sleepLatency: e.sleepLatency,
+            awakeningsCount: e.awakeningsCount,
+            awakeningsDuration: e.awakeningsDuration,
+            wakeUpTime: e.wakeUpTime,
+            outOfBedTime: e.outOfBedTime,
+            notes: e.notes,
+            factors: e.factors,
+            sleepQuality: e.sleepQuality,
+            daytimeAlertness: e.daytimeAlertness
+        });
+        const m = calculateMetrics(normalized);
+        if (typeof m.tstMinutes === 'number') { sumTST += m.tstMinutes; cntTST++; }
+        if (typeof m.sePercent === 'number') { sumSE += m.sePercent; cntSE++; if (m.sePercent < 85) anomalies.push({ date: e.date, type: 'SE', value: m.sePercent }); }
+    }
+    return {
+        count: last7.length,
+        avgTSTMinutes: cntTST ? sumTST / cntTST : null,
+        avgSEPercent: cntSE ? sumSE / cntSE : null,
+        anomalies
+    };
+}
+
+const diaryStore = {
+    ensureMigrated: function() {
+        const current = localStorage.getItem(DIARY_STORAGE_KEY);
+        const legacy = localStorage.getItem(LEGACY_ARRAY_KEY);
+        if (!current && legacy) {
+            let parsed;
+            try { parsed = JSON.parse(legacy); } catch { parsed = []; }
+            const map = {};
+            const arr = Array.isArray(parsed) ? parsed : Object.values(parsed || {});
+            for (const e of arr) {
+                if (e && e.date) map[e.date] = e;
+            }
+            localStorage.setItem(DIARY_STORAGE_KEY, JSON.stringify(map));
+            localStorage.removeItem(LEGACY_ARRAY_KEY);
+        }
+        const raw = localStorage.getItem(DIARY_STORAGE_KEY);
+        if (!raw) return;
+        let obj;
+        try { obj = JSON.parse(raw); } catch { obj = {}; }
+        let changed = false;
+        for (const k of Object.keys(obj)) {
+            const e = obj[k];
+            if (!e || e.version) continue;
+            const normalized = normalizeEntry({
+                date: e.date,
+                bedTime: e.bedTime,
+                sleepLatency: e.sleepLatency,
+                awakeningsCount: e.awakeningsCount,
+                awakeningsDuration: e.awakeningsDuration,
+                wakeUpTime: e.wakeUpTime,
+                outOfBedTime: e.outOfBedTime,
+                notes: e.notes,
+                factors: e.factors,
+                sleepQuality: e.sleepQuality,
+                daytimeAlertness: e.daytimeAlertness
+            });
+            const m = calculateMetrics(normalized);
+            const tstHours = typeof m.tstMinutes === 'number' ? parseFloat((m.tstMinutes / 60).toFixed(2)) : 0;
+            const sePct = typeof m.sePercent === 'number' ? parseFloat(m.sePercent.toFixed(1)) : 0;
+            const tstText = typeof m.tstMinutes === 'number' ? `${Math.floor(m.tstMinutes / 60)}小时 ${m.tstMinutes % 60}分钟` : '-';
+            const seText = typeof m.sePercent === 'number' ? `${sePct.toFixed(1)} %` : '-';
+            obj[k] = {
+                ...e,
+                normalized,
+                metrics: {
+                    ...e.metrics,
+                    TST: tstHours,
+                    SE: sePct,
+                    tst_display: tstText,
+                    se_display: seText,
+                    waso: typeof m.wasoMinutes === 'number' ? `${m.wasoMinutes} 分钟` : '-',
+                    timeAwakeInBed: typeof m.awakeInBedMinutes === 'number' ? `${m.awakeInBedMinutes} 分钟` : '-'
+                },
+                version: DATA_VERSION
+            };
+            changed = true;
+        }
+        if (changed) localStorage.setItem(DIARY_STORAGE_KEY, JSON.stringify(obj));
+    },
+    getMap: function() {
+        const raw = localStorage.getItem(DIARY_STORAGE_KEY);
+        if (!raw) return {};
+        try {
+            const obj = JSON.parse(raw);
+            return typeof obj === 'object' && obj ? obj : {};
+        } catch { return {}; }
+    },
+    get: function(date) {
+        const all = this.getMap();
+        return all[date] || null;
+    },
+    set: function(date, entry) {
+        const all = this.getMap();
+        all[date] = entry;
+        localStorage.setItem(DIARY_STORAGE_KEY, JSON.stringify(all));
+    },
+    remove: function(date) {
+        const all = this.getMap();
+        delete all[date];
+        localStorage.setItem(DIARY_STORAGE_KEY, JSON.stringify(all));
+    },
+    toJSON: function() {
+        const map = this.getMap();
+        return { version: DATA_VERSION, diaries: Object.values(map) };
+    },
+    fromJSON: function(payload) {
+        if (!payload || typeof payload !== 'object') return { imported: 0, overwritten: 0 };
+        const diaries = Array.isArray(payload.diaries) ? payload.diaries : [];
+        const all = this.getMap();
+        let imported = 0, overwritten = 0;
+        for (const e of diaries) {
+            if (!e || !e.date) continue;
+            if (all[e.date]) overwritten++; else imported++;
+            all[e.date] = e;
+        }
+        localStorage.setItem(DIARY_STORAGE_KEY, JSON.stringify(all));
+        return { imported, overwritten };
+    }
+};
+
 // 等待整个 HTML 文档加载完成后再执行脚本
 document.addEventListener('DOMContentLoaded', () => {
     // --- DOM 元素获取 ---
@@ -71,6 +280,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // 初始化函数
     function initializeApp() {
+        diaryStore.ensureMigrated();
         // 1. 设置日期选择器默认值为今天
         const today = new Date();
         // 格式化日期为 YYYY-MM-DD，以匹配 <input type="date"> 的 value 格式
@@ -579,19 +789,17 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // 导出数据
     function exportData() {
-        console.log('导出全部数据...');
-        const allDiaries = getAllDiariesFromLocalStorage();
-        if (Object.keys(allDiaries).length === 0) {
+        const payload = diaryStore.toJSON();
+        if (!Array.isArray(payload.diaries) || payload.diaries.length === 0) {
             alert('没有数据可以导出。');
             return;
         }
-
-        const jsonData = JSON.stringify(allDiaries, null, 2); // null, 2 用于格式化JSON，使其更易读
+        const jsonData = JSON.stringify(payload, null, 2);
         const blob = new Blob([jsonData], { type: 'application/json' });
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        const timestamp = new Date().toISOString().replace(/[:.-]/g, '').slice(0, -4); // YYYYMMDDTHHMMSS
+        const timestamp = new Date().toISOString().replace(/[:.-]/g, '').slice(0, -4);
         a.download = `my_sleep_diary_export_${timestamp}.json`;
         document.body.appendChild(a);
         a.click();
@@ -611,39 +819,34 @@ document.addEventListener('DOMContentLoaded', () => {
         reader.onload = (e) => {
             try {
                 const importedData = JSON.parse(e.target.result);
-                // TODO: 添加更详细的数据校验逻辑
                 if (typeof importedData !== 'object' || importedData === null) {
                     throw new Error('文件内容不是有效的JSON对象。');
                 }
-
-                // 导入策略：询问用户是覆盖还是合并
-                // 简单起见，我们先实现一个“智能合并/覆盖”：如果日期已存在，则用导入的数据覆盖
-                let importCount = 0;
-                let overwriteCount = 0;
-                const existingDiaries = getAllDiariesFromLocalStorage();
-
-                if (!confirm("您将导入睡眠日记数据。\n\n- 如果导入的记录与现有记录日期相同，现有记录将被覆盖。\n- 新日期的记录将被添加。\n\n是否继续导入？")) {
-                    importFileElement.value = ''; // 清空文件选择，以便下次还能选择同一个文件
+                if (!confirm('您将导入睡眠日记数据。\n\n- 如果导入的记录与现有记录日期相同，现有记录将被覆盖。\n- 新日期的记录将被添加。\n\n是否继续导入？')) {
+                    importFileElement.value = '';
                     return;
                 }
-
-                for (const dateKey in importedData) {
-                    // 简单校验日期格式 (YYYY-MM-DD) 和基本结构
-                    if (/^\d{4}-\d{2}-\d{2}$/.test(dateKey) && typeof importedData[dateKey] === 'object') {
-                        if (existingDiaries[dateKey]) {
-                            overwriteCount++;
-                        } else {
-                            importCount++;
+                let importCount = 0;
+                let overwriteCount = 0;
+                if (Array.isArray(importedData.diaries)) {
+                    const res = diaryStore.fromJSON(importedData);
+                    importCount = res.imported;
+                    overwriteCount = res.overwritten;
+                } else {
+                    const existingDiaries = getAllDiariesFromLocalStorage();
+                    for (const dateKey in importedData) {
+                        if (/^\d{4}-\d{2}-\d{2}$/.test(dateKey) && typeof importedData[dateKey] === 'object') {
+                            if (existingDiaries[dateKey]) {
+                                overwriteCount++;
+                            } else {
+                                importCount++;
+                            }
+                            saveDiaryToLocalStorage(dateKey, importedData[dateKey]);
                         }
-                        saveDiaryToLocalStorage(dateKey, importedData[dateKey]);
-                    } else {
-                        console.warn(`跳过无效的导入数据条目，键: ${dateKey}`);
                     }
                 }
-
                 alert(`数据导入完成！\n新增记录: ${importCount}条\n覆盖记录: ${overwriteCount}条`);
-                renderHistoryList(); // 刷新历史列表
-                // 导入后，可以尝试加载当天的日记（如果导入数据包含当天）
+                renderHistoryList();
                 loadDiaryForDate(datePicker.value);
 
             } catch (error) {
@@ -661,62 +864,61 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // 从 localStorage 获取所有日记条目，并返回一个数组
     function getAllDiariesFromLocalStorage() {
-        const diariesObject = JSON.parse(localStorage.getItem('sleepDiaries')) || {};
-        // 将以日期为键的对象转换为包含所有日记条目的数组
-        return Object.values(diariesObject);
+        return diaryStore.getMap();
     }
 
     // (如果这些函数已存在，请检查它们是否按如下方式工作)
     // (如果不存在，您需要添加它们)
     
-    const STORAGE_KEY = 'sleepDiaryEntries'; // 再次强调，确保这个KEY在全局定义且一致
-    
+    const STORAGE_KEY = 'sleepDiaryEntries';
     function getAllDiariesFromLocalStorage() {
-        const diariesJSON = localStorage.getItem(STORAGE_KEY);
-        if (!diariesJSON) {
-            return {}; // 关键：如果没找到数据，返回空对象
-        }
-        try {
-            const diaries = JSON.parse(diariesJSON);
-            // 确保解析出来的是一个对象
-            if (typeof diaries === 'object' && diaries !== null && !Array.isArray(diaries)) {
-                return diaries;
-            } else {
-                // 如果解析出来不是预期的对象格式（例如，意外地存成了数组或null）
-                console.warn('LocalStorage data is not a valid object, returning empty object.');
-                return {};
-            }
-        } catch (e) {
-            console.error("Error parsing diaries from localStorage:", e);
-            return {}; // 解析出错也返回空对象，避免程序崩溃
-        }
+        return diaryStore.getMap();
     }
 
     function getDiaryFromLocalStorage(dateString) {
         const allDiaries = getAllDiariesFromLocalStorage();
-        return allDiaries[dateString] || null; // 返回特定日期的日记，或null
+        return allDiaries[dateString] || null;
     }
 
     function saveDiaryToLocalStorage(dateString, diaryEntry) {
-        console.log('[saveDiaryToLocalStorage] Date:', dateString, 'Entry:', diaryEntry); // 调试信息
-        const allDiaries = getAllDiariesFromLocalStorage();
-        console.log('[saveDiaryToLocalStorage] Diaries from localStorage before save:', JSON.parse(JSON.stringify(allDiaries))); // 调试信息 (深拷贝打印)
-        allDiaries[dateString] = diaryEntry;
-        console.log('[saveDiaryToLocalStorage] Diaries to be saved:', JSON.parse(JSON.stringify(allDiaries))); // 调试信息
-        try {
-            localStorage.setItem(STORAGE_KEY, JSON.stringify(allDiaries));
-            console.log('[saveDiaryToLocalStorage] Save successful.'); // 调试信息
-        } catch (e) {
-            console.error("Error saving diary to localStorage:", e);
-            alert('保存日记时出错，数据可能未能成功保存。请检查浏览器控制台获取更多信息。');
-        }
+        const normalized = normalizeEntry({
+            date: diaryEntry.date,
+            bedTime: diaryEntry.bedTime,
+            sleepLatency: diaryEntry.sleepLatency,
+            awakeningsCount: diaryEntry.awakeningsCount,
+            awakeningsDuration: diaryEntry.awakeningsDuration,
+            wakeUpTime: diaryEntry.wakeUpTime,
+            outOfBedTime: diaryEntry.outOfBedTime,
+            notes: diaryEntry.notes,
+            factors: diaryEntry.factors,
+            sleepQuality: diaryEntry.sleepQuality,
+            daytimeAlertness: diaryEntry.daytimeAlertness
+        });
+        const m = calculateMetrics(normalized);
+        const tstHours = typeof m.tstMinutes === 'number' ? parseFloat((m.tstMinutes / 60).toFixed(2)) : 0;
+        const sePct = typeof m.sePercent === 'number' ? parseFloat(m.sePercent.toFixed(1)) : 0;
+        const tstText = typeof m.tstMinutes === 'number' ? `${Math.floor(m.tstMinutes / 60)}小时 ${m.tstMinutes % 60}分钟` : '-';
+        const seText = typeof m.sePercent === 'number' ? `${sePct.toFixed(1)} %` : '-';
+        const stored = {
+            ...diaryEntry,
+            normalized,
+            metrics: {
+                ...diaryEntry.metrics,
+                TST: tstHours,
+                SE: sePct,
+                tst_display: tstText,
+                se_display: seText,
+                waso: typeof m.wasoMinutes === 'number' ? `${m.wasoMinutes} 分钟` : diaryEntry.metrics?.waso,
+                timeAwakeInBed: typeof m.awakeInBedMinutes === 'number' ? `${m.awakeInBedMinutes} 分钟` : diaryEntry.metrics?.timeAwakeInBed
+            },
+            version: DATA_VERSION
+        };
+        diaryStore.set(dateString, stored);
     }
 
     // 从 localStorage 删除指定日期的日记
     function deleteDiaryFromLocalStorage(dateString) {
-        const allDiaries = getAllDiariesFromLocalStorage();
-        delete allDiaries[dateString];
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(allDiaries));
+        diaryStore.remove(dateString);
     }
 
 
