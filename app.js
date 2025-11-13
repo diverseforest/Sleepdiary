@@ -378,6 +378,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // 顶部全局操作按钮
     const exportDataBtn = document.getElementById('exportDataBtn');
+    const exportCSVBtn = document.getElementById('exportCSVBtn');
     const importDataBtn = document.getElementById('importDataBtn');
     const importFileElement = document.getElementById('importFile'); // 隐藏的文件选择框
 
@@ -450,6 +451,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // 7. 为导入导出按钮添加事件监听 (功能后续实现)
         exportDataBtn.addEventListener('click', exportData);
+        exportCSVBtn.addEventListener('click', exportCSV);
         importDataBtn.addEventListener('click', () => importFileElement.click()); // 点击按钮时触发隐藏的文件输入框
         importFileElement.addEventListener('change', importData);
         const prevW = document.getElementById('prevWeekBtn');
@@ -927,7 +929,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    // 导出数据
+    // 导出数据（JSON格式）
     function exportData() {
         const payload = diaryStore.toJSON();
         if (!Array.isArray(payload.diaries) || payload.diaries.length === 0) {
@@ -970,10 +972,92 @@ document.addEventListener('DOMContentLoaded', () => {
         a.click();
         document.body.removeChild(a);
         URL.revokeObjectURL(url);
-        alert('数据已导出！');
+        alert('JSON数据已导出！');
     }
 
-    // 导入数据
+    // 导出CSV格式数据
+    function exportCSV() {
+        const payload = diaryStore.toJSON();
+        if (!Array.isArray(payload.diaries) || payload.diaries.length === 0) {
+            alert('没有数据可以导出。');
+            return;
+        }
+
+        // CSV表头
+        const headers = [
+            '日期', '上床时间', '入睡潜伏期(分钟)', '觉醒次数',
+            '觉醒持续时间(分钟)', '醒来时间', '起床时间',
+            '睡眠总时长(分钟)', '睡眠效率(%)',
+            '睡眠质量', '日间警觉性', '备注'
+        ];
+
+        // 转换数据行
+        const rows = payload.diaries.map(entry => {
+            const tstMinutes = entry.metrics?.TST ? Math.round(entry.metrics.TST * 60) : '';
+            const sePercent = entry.metrics?.SE ? entry.metrics.SE : '';
+
+            return [
+                entry.date,
+                entry.bedtime || '',
+                entry.sleepLatencyMin ?? '',
+                entry.awakeningsCount ?? '',
+                entry.awakeningsDurationMin ?? '',
+                entry.wakeTime || '',
+                entry.outOfBedTime || '',
+                tstMinutes,
+                sePercent,
+                entry.sleepQuality || '',
+                entry.daytimeAlertness || '',
+                `"${(entry.notes || '').replace(/"/g, '""')}"` // CSV转义双引号
+            ];
+        });
+
+        // 添加周报KPI作为注释行
+        const weeklyRange = getWeekRange(0);
+        const map = getAllDiariesFromLocalStorage();
+        let sumTstMin = 0, cntTst = 0, sumSe = 0, cntSe = 0;
+        for (let i=0;i<7;i++) {
+            const d = new Date(weeklyRange.start);
+            d.setDate(weeklyRange.start.getDate()+i);
+            const key = d.toISOString().slice(0,10);
+            const e = map[key];
+            if (e && typeof e.metrics?.TST === 'number') {
+                sumTstMin += e.metrics.TST * 60;
+                cntTst++;
+            }
+            if (e && typeof e.metrics?.SE === 'number') {
+                sumSe += e.metrics.SE;
+                cntSe++;
+            }
+        }
+        const avgTST = cntTst ? Math.round(sumTstMin / cntTst) : 0;
+        const avgSE = cntSe ? (sumSe / cntSe).toFixed(1) : 0;
+
+        const csvLines = [
+            '# 睡眠日记数据导出',
+            `# 导出时间: ${new Date().toLocaleString('zh-CN')}`,
+            `# 周报期间: ${weeklyRange.startStr} 至 ${weeklyRange.endStr}`,
+            `# 平均TST: ${avgTST} 分钟`,
+            `# 平均SE: ${avgSE}%`,
+            headers.join(','),
+            ...rows.map(row => row.join(','))
+        ];
+
+        const csvContent = csvLines.join('\n');
+        const blob = new Blob(['\ufeff' + csvContent], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        const timestamp = new Date().toISOString().replace(/[:.-]/g, '').slice(0, -4);
+        a.download = `my_sleep_diary_export_${timestamp}.csv`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        alert('CSV数据已导出！');
+    }
+
+    // 导入数据（增强版，包含校验和详细冲突处理）
     function importData(event) {
         const file = event.target.files[0];
         if (!file) {
@@ -984,51 +1068,135 @@ document.addEventListener('DOMContentLoaded', () => {
         reader.onload = (e) => {
             try {
                 const importedData = JSON.parse(e.target.result);
+
+                // 1. 基础格式校验
                 if (typeof importedData !== 'object' || importedData === null) {
                     throw new Error('文件内容不是有效的JSON对象。');
                 }
-                if (!confirm('您将导入睡眠日记数据。\n\n- 如果导入的记录与现有记录日期相同，现有记录将被覆盖。\n- 新日期的记录将被添加。\n\n是否继续导入？')) {
-                    importFileElement.value = '';
-                    return;
+
+                // 2. 版本校验（向后兼容旧版本）
+                const fileVersion = importedData.version || 0;
+                if (fileVersion > DATA_VERSION) {
+                    throw new Error(`文件版本(${fileVersion})高于当前应用支持的版本(${DATA_VERSION})，请更新应用后再尝试导入。`);
                 }
+                if (fileVersion < DATA_VERSION) {
+                    if (!confirm(`检测到旧版本数据（版本 ${fileVersion}），当前版本为 ${DATA_VERSION}。\n\n旧版本数据可以自动转换，但可能会有部分字段丢失。\n\n是否继续导入？`)) {
+                        importFileElement.value = '';
+                        return;
+                    }
+                }
+
+                // 3. 字段完整性验证和预览
                 let importCount = 0;
                 let overwriteCount = 0;
                 let questionnaireImportCount = 0;
+                const existingDiaries = getAllDiariesFromLocalStorage();
+                const conflicts = [];
+
+                // 验证日记数据
                 if (Array.isArray(importedData.diaries)) {
-                    const res = diaryStore.fromJSON(importedData);
-                    importCount = res.imported;
-                    overwriteCount = res.overwritten;
-                } else {
-                    const existingDiaries = getAllDiariesFromLocalStorage();
+                    for (const diary of importedData.diaries) {
+                        if (!diary || !diary.date) continue;
+
+                        // 验证必需字段完整性
+                        const requiredFields = ['bedtime', 'wakeTime', 'outOfBedTime'];
+                        const missingFields = requiredFields.filter(field => !diary[field]);
+                        if (missingFields.length > 0) {
+                            console.warn(`日记 ${diary.date} 缺少字段: ${missingFields.join(', ')}`);
+                        }
+
+                        if (existingDiaries[diary.date]) {
+                            overwriteCount++;
+                            conflicts.push(diary.date);
+                        } else {
+                            importCount++;
+                        }
+                    }
+                } else if (!importedData.diaries) {
+                    // 兼容旧格式：直接以日期为key的对象
                     for (const dateKey in importedData) {
                         if (/^\d{4}-\d{2}-\d{2}$/.test(dateKey) && typeof importedData[dateKey] === 'object') {
                             if (existingDiaries[dateKey]) {
                                 overwriteCount++;
+                                conflicts.push(dateKey);
                             } else {
                                 importCount++;
+                            }
+                        }
+                    }
+                }
+
+                // 验证问卷数据
+                if (Array.isArray(importedData.questionnaires)) {
+                    for (const q of importedData.questionnaires) {
+                        if (q && q.date && q.questionnaireId) {
+                            questionnaireImportCount++;
+                        }
+                    }
+                }
+
+                // 4. 详细冲突处理提示
+                let confirmMessage = `即将导入数据:\n\n`;
+                if (importCount > 0) {
+                    confirmMessage += `新增日记记录: ${importCount} 条\n`;
+                }
+                if (overwriteCount > 0) {
+                    confirmMessage += `⚠️ 覆盖现有日记: ${overwriteCount} 条${conflicts.length > 0 ? ` (${conflicts.slice(0, 3).join(', ')}${conflicts.length > 3 ? '...' : ''})` : ''}\n`;
+                }
+                if (questionnaireImportCount > 0) {
+                    confirmMessage += `量表记录: ${questionnaireImportCount} 条\n`;
+                }
+                confirmMessage += `\n请选择继续或取消。`;
+
+                if (!confirm(confirmMessage)) {
+                    importFileElement.value = '';
+                    return;
+                }
+
+                // 5. 执行导入
+                let actualImported = 0;
+                let actualOverwritten = 0;
+
+                if (Array.isArray(importedData.diaries)) {
+                    const res = diaryStore.fromJSON(importedData);
+                    actualImported = res.imported;
+                    actualOverwritten = res.overwritten;
+                } else {
+                    // 兼容旧格式
+                    for (const dateKey in importedData) {
+                        if (/^\d{4}-\d{2}-\d{2}$/.test(dateKey) && typeof importedData[dateKey] === 'object') {
+                            if (existingDiaries[dateKey]) {
+                                actualOverwritten++;
+                            } else {
+                                actualImported++;
                             }
                             saveDiaryToLocalStorage(dateKey, importedData[dateKey]);
                         }
                     }
                 }
+
+                let actualQImported = 0;
                 if (Array.isArray(importedData.questionnaires)) {
-                    importedData.questionnaires.forEach(e => {
-                        if (e && e.date && e.questionnaireId) {
-                            questionnaireStore.upsertFromImport(e);
-                            questionnaireImportCount++;
+                    for (const q of importedData.questionnaires) {
+                        if (q && q.date && q.questionnaireId) {
+                            questionnaireStore.upsertFromImport(q);
+                            actualQImported++;
                         }
-                    });
+                    }
                 }
-                alert(`数据导入完成！\n新增记录: ${importCount}条\n覆盖记录: ${overwriteCount}条\n量表条目: ${questionnaireImportCount}条`);
+
+                alert(`数据导入完成！\n\n新增: ${actualImported} 条\n覆盖: ${actualOverwritten} 条\n量表: ${actualQImported} 条`);
+
+                // 6. 刷新界面
                 renderHistoryList();
                 loadDiaryForDate(datePicker.value);
                 renderQuestionnaireHistory();
 
             } catch (error) {
                 console.error('导入失败:', error);
-                alert('导入失败：文件格式无效或已损坏。');
+                alert(`导入失败：${error.message || '文件格式无效或已损坏。'}`);
             } finally {
-                importFileElement.value = ''; // 清空文件选择，以便下次还能选择同一个文件
+                importFileElement.value = ''; // 清空文件选择
             }
         };
         reader.readAsText(file);
