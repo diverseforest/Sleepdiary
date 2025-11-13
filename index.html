@@ -29,6 +29,47 @@
     <!-- 主内容区域 - 调整为单列布局 -->
     <div class="container single-column">
         
+        <section class="weekly-summary-section">
+            <h2>本周概览</h2>
+            <div class="weekly-kpi" style="display:flex;flex-wrap:wrap;gap:12px;">
+                <div class="kpi-card" style="flex:1 1 180px;min-width:160px;border:1px solid #ddd;padding:10px;border-radius:6px;">
+                    <div>平均 TST</div>
+                    <strong id="weeklyAvgTST">-</strong>
+                </div>
+                <div class="kpi-card" style="flex:1 1 180px;min-width:160px;border:1px solid #ddd;padding:10px;border-radius:6px;">
+                    <div>平均 SE</div>
+                    <strong id="weeklyAvgSE">-</strong>
+                </div>
+                <div class="kpi-card" style="flex:1 1 180px;min-width:160px;border:1px solid #ddd;padding:10px;border-radius:6px;">
+                    <div>平均入睡时间</div>
+                    <strong id="weeklyAvgSleepStart">-</strong>
+                </div>
+                <div class="kpi-card" style="flex:1 1 180px;min-width:160px;border:1px solid #ddd;padding:10px;border-radius:6px;">
+                    <div>平均起床时间</div>
+                    <strong id="weeklyAvgWake">-</strong>
+                </div>
+                <div class="kpi-card" style="flex:1 1 180px;min-width:160px;border:1px solid #ddd;padding:10px;border-radius:6px;">
+                    <div>平均主观评分</div>
+                    <strong id="weeklyAvgQuality">-</strong>
+                </div>
+            </div>
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-top:10px;">
+                <div>
+                    <button id="prevWeekBtn">上一周</button>
+                    <button id="nextWeekBtn">下一周</button>
+                </div>
+                <div id="weeklyRangeLabel"></div>
+            </div>
+            <div id="weeklyChartContainer" style="position: relative; height:35vh; width:100%; max-width: 1000px; margin: 12px auto;">
+                <canvas id="weeklyChartCanvas"></canvas>
+                <p id="weeklyNoDataMessage" style="text-align: center; display: none; padding-top: 12px;">本周暂无数据。</p>
+            </div>
+            <div>
+                <h3>异常</h3>
+                <ul id="weeklyAnomaliesList"></ul>
+            </div>
+        </section>
+
         <!-- 1. 数据可视化区域 - 移到最上方 -->
         <section class="visualization-section">
             <h2>数据可视化</h2>
@@ -106,27 +147,27 @@
                     <div class="factor-item">
                         <input type="checkbox" id="factorCaffeine"> 
                         <label for="factorCaffeine">咖啡因</label>
-                        <input type="text" id="factorCaffeineDetail" placeholder="时间/量" class="inline-input" style="display:none;">
+                        <input type="text" id="factorCaffeineDetail" placeholder="时间/量" class="inline-input" style="display:none;" aria-label="咖啡因详情" title="咖啡因详情">
                     </div>
                     <div class="factor-item">
                         <input type="checkbox" id="factorAlcohol"> 
                         <label for="factorAlcohol">酒精</label>
-                        <input type="text" id="factorAlcoholDetail" placeholder="时间/量" class="inline-input" style="display:none;">
+                        <input type="text" id="factorAlcoholDetail" placeholder="时间/量" class="inline-input" style="display:none;" aria-label="酒精详情" title="酒精详情">
                     </div>
                     <div class="factor-item">
                         <input type="checkbox" id="factorMedication"> 
                         <label for="factorMedication">药物</label>
-                        <input type="text" id="factorMedicationDetail" placeholder="名称/剂量" class="inline-input" style="display:none;">
+                        <input type="text" id="factorMedicationDetail" placeholder="名称/剂量" class="inline-input" style="display:none;" aria-label="药物详情" title="药物详情">
                     </div>
                     <div class="factor-item">
                         <input type="checkbox" id="factorExercise"> 
                         <label for="factorExercise">运动</label>
-                        <input type="text" id="factorExerciseDetail" placeholder="时间/强度" class="inline-input" style="display:none;">
+                        <input type="text" id="factorExerciseDetail" placeholder="时间/强度" class="inline-input" style="display:none;" aria-label="运动详情" title="运动详情">
                     </div>
                     <div class="factor-item">
                         <input type="checkbox" id="factorDaytimeDrowsiness"> 
                         <label for="factorDaytimeDrowsiness">日间困倦</label>
-                        <input type="text" id="factorDaytimeDrowsinessDetail" placeholder="程度/时间" class="inline-input" style="display:none;">
+                        <input type="text" id="factorDaytimeDrowsinessDetail" placeholder="程度/时间" class="inline-input" style="display:none;" aria-label="日间困倦详情" title="日间困倦详情">
                     </div>
                 </div>
             </fieldset>
@@ -211,7 +252,7 @@
         <!-- 数据存储风险提示 -->
     </footer>
 
-    <input type="file" id="importFile" accept=".json" style="display: none;">
+    <input type="file" id="importFile" accept=".json" style="display: none;" aria-label="导入睡眠日记数据" aria-hidden="true" tabindex="-1">
     <!-- 隐藏的文件输入框，用于导入数据 -->
 
     <script src="app.js" defer></script>

@@ -328,6 +328,10 @@ document.addEventListener('DOMContentLoaded', () => {
         exportDataBtn.addEventListener('click', exportData);
         importDataBtn.addEventListener('click', () => importFileElement.click()); // 点击按钮时触发隐藏的文件输入框
         importFileElement.addEventListener('change', importData);
+        const prevW = document.getElementById('prevWeekBtn');
+        const nextW = document.getElementById('nextWeekBtn');
+        if (prevW) prevW.addEventListener('click', () => { currentWeekOffset -= 1; renderWeeklySummary(); });
+        if (nextW) nextW.addEventListener('click', () => { currentWeekOffset = Math.min(currentWeekOffset + 1, 0); renderWeeklySummary(); });
 
 
         // 8. 加载当天的日记（如果存在）
@@ -344,6 +348,7 @@ document.addEventListener('DOMContentLoaded', () => {
             console.log('图表初始化完成');
         }, 100);
 
+        renderWeeklySummary();
         console.log('睡眠日记应用已初始化完毕！');
     }
 
@@ -670,6 +675,7 @@ document.addEventListener('DOMContentLoaded', () => {
         // 新增：保存后更新图表
         const allDiaries = getAllDiariesFromLocalStorage();
         renderSleepChart(allDiaries);
+        renderWeeklySummary();
 
         // 更新按钮状态
         saveDiaryBtn.textContent = '更新日记';
@@ -766,6 +772,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     // 删除后也需要更新图表
                     const updatedDiaries = getAllDiariesFromLocalStorage();
                     renderSleepChart(updatedDiaries);
+                    renderWeeklySummary();
                     alert(`日记 ${dateToDelete} 已删除。`);
                 }
             });
@@ -794,6 +801,30 @@ document.addEventListener('DOMContentLoaded', () => {
             alert('没有数据可以导出。');
             return;
         }
+        const weeklyRange = getWeekRange(0);
+        const map = getAllDiariesFromLocalStorage();
+        let sumTstMin = 0, cntTst = 0, sumSe = 0, cntSe = 0;
+        for (let i=0;i<7;i++) {
+            const d = new Date(weeklyRange.start);
+            d.setDate(weeklyRange.start.getDate()+i);
+            const y = d.getFullYear();
+            const m = String(d.getMonth()+1).padStart(2,'0');
+            const day = String(d.getDate()).padStart(2,'0');
+            const key = `${y}-${m}-${day}`;
+            const e = map[key];
+            if (e) {
+                const tstH = typeof e.metrics?.TST === 'number' ? e.metrics.TST : null;
+                const seP = typeof e.metrics?.SE === 'number' ? e.metrics.SE : null;
+                if (typeof tstH === 'number') { sumTstMin += tstH*60; cntTst++; }
+                if (typeof seP === 'number') { sumSe += seP; cntSe++; }
+            }
+        }
+        payload.weeklySummary = {
+            rangeStart: weeklyRange.startStr,
+            rangeEnd: weeklyRange.endStr,
+            avgTSTMinutes: cntTst ? Math.round(sumTstMin/cntTst) : null,
+            avgSEPercent: cntSe ? parseFloat((sumSe/cntSe).toFixed(1)) : null
+        };
         const jsonData = JSON.stringify(payload, null, 2);
         const blob = new Blob([jsonData], { type: 'application/json' });
         const url = URL.createObjectURL(blob);
@@ -931,6 +962,8 @@ document.addEventListener('DOMContentLoaded', () => {
 }); // DOMContentLoaded 结束
 
 let sleepChartInstance = null; // 用于存储Chart.js图表实例
+let weeklyChartInstance = null;
+let currentWeekOffset = 0;
 
 
 /**
@@ -1139,57 +1172,126 @@ function renderSleepChart(diaryEntries) { // diaryEntries 是一个以日期为�
     sleepChartInstance = new Chart(ctx, chartConfig);
 }
 
+function getWeekRange(offset) {
+    const end = new Date();
+    end.setDate(end.getDate() + offset * 7);
+    end.setHours(0,0,0,0);
+    const start = new Date(end);
+    start.setDate(end.getDate() - 6);
+    const fmt = d => {
+        const y = d.getFullYear();
+        const m = String(d.getMonth()+1).padStart(2,'0');
+        const day = String(d.getDate()).padStart(2,'0');
+        return `${y}-${m}-${day}`;
+    };
+    return { start, end, startStr: fmt(start), endStr: fmt(end) };
+}
+
+function renderWeeklySummary() {
+    const map = diaryStore.getMap();
+    const range = getWeekRange(currentWeekOffset);
+    const labels = [];
+    const tstHours = [];
+    const sePercents = [];
+    const anomalies = [];
+    let sumTstMin = 0, cntTst = 0, sumSe = 0, cntSe = 0, sumSleepStartMin = 0, cntSleepStart = 0, sumWakeMin = 0, cntWake = 0, sumQuality = 0, cntQuality = 0;
+    for (let i=0;i<7;i++) {
+        const d = new Date(range.start);
+        d.setDate(range.start.getDate()+i);
+        const y = d.getFullYear();
+        const m = String(d.getMonth()+1).padStart(2,'0');
+        const day = String(d.getDate()).padStart(2,'0');
+        const key = `${y}-${m}-${day}`;
+        labels.push(`${m}-${day}`);
+        const e = map[key];
+        if (e) {
+            let tstH = typeof e.metrics?.TST === 'number' ? e.metrics.TST : null;
+            let seP = typeof e.metrics?.SE === 'number' ? e.metrics.SE : null;
+            if (tstH === null || seP === null) {
+                const norm = e.normalized ? e.normalized : normalizeEntry({
+                    date: e.date,
+                    bedTime: e.bedTime,
+                    sleepLatency: e.sleepLatency,
+                    awakeningsCount: e.awakeningsCount,
+                    awakeningsDuration: e.awakeningsDuration,
+                    wakeUpTime: e.wakeUpTime,
+                    outOfBedTime: e.outOfBedTime,
+                    notes: e.notes,
+                    factors: e.factors,
+                    sleepQuality: e.sleepQuality,
+                    daytimeAlertness: e.daytimeAlertness
+                });
+                const mtr = calculateMetrics(norm);
+                tstH = typeof mtr.tstMinutes === 'number' ? parseFloat((mtr.tstMinutes/60).toFixed(2)) : null;
+                seP = typeof mtr.sePercent === 'number' ? parseFloat(mtr.sePercent.toFixed(1)) : null;
+            }
+            if (typeof tstH === 'number') { sumTstMin += tstH*60; cntTst++; }
+            if (typeof seP === 'number') { sumSe += seP; cntSe++; if (seP < 85) anomalies.push(`${key} SE ${seP}%`); }
+            tstHours.push(typeof tstH === 'number' ? tstH : 0);
+            sePercents.push(typeof seP === 'number' ? seP : 0);
+            const norm2 = e.normalized ? e.normalized : normalizeEntry(e);
+            const m2 = calculateMetrics(norm2);
+            if (m2.sleepStartTime) {
+                const [hh,mm] = m2.sleepStartTime.split(':').map(Number);
+                sumSleepStartMin += hh*60+mm; cntSleepStart++;
+            }
+            if (norm2.wakeTime) {
+                const wm = parseTimeToMinutes(norm2.wakeTime);
+                if (wm !== null) { sumWakeMin += wm; cntWake++; }
+            }
+            if (norm2.sleepQuality) { const q = parseInt(norm2.sleepQuality,10); if (!Number.isNaN(q)) { sumQuality += q; cntQuality++; } }
+        } else {
+            tstHours.push(0);
+            sePercents.push(0);
+        }
+    }
+    const avgTstText = cntTst ? `${Math.floor((sumTstMin/cntTst)/60)}小时 ${Math.round((sumTstMin/cntTst)%60)}分钟` : '-';
+    const avgSeText = cntSe ? `${(sumSe/cntSe).toFixed(1)} %` : '-';
+    const avgSleepStartText = cntSleepStart ? (()=>{ const avg = Math.round(sumSleepStartMin/cntSleepStart); const h = String(Math.floor(avg/60)).padStart(2,'0'); const m = String(avg%60).padStart(2,'0'); return `${h}:${m}`; })() : '-';
+    const avgWakeText = cntWake ? (()=>{ const avg = Math.round(sumWakeMin/cntWake); const h = String(Math.floor(avg/60)).padStart(2,'0'); const m = String(avg%60).padStart(2,'0'); return `${h}:${m}`; })() : '-';
+    const avgQualityText = cntQuality ? (sumQuality/cntQuality).toFixed(1) : '-';
+    const elTst = document.getElementById('weeklyAvgTST');
+    const elSe = document.getElementById('weeklyAvgSE');
+    const elSs = document.getElementById('weeklyAvgSleepStart');
+    const elWk = document.getElementById('weeklyAvgWake');
+    const elQl = document.getElementById('weeklyAvgQuality');
+    const elRange = document.getElementById('weeklyRangeLabel');
+    const elNo = document.getElementById('weeklyNoDataMessage');
+    const elCanvas = document.getElementById('weeklyChartCanvas');
+    const elAn = document.getElementById('weeklyAnomaliesList');
+    if (elTst) elTst.textContent = avgTstText;
+    if (elSe) elSe.textContent = avgSeText;
+    if (elSs) elSs.textContent = avgSleepStartText;
+    if (elWk) elWk.textContent = avgWakeText;
+    if (elQl) elQl.textContent = avgQualityText;
+    if (elRange) elRange.textContent = `${range.startStr} ~ ${range.endStr}`;
+    if (elAn) {
+        elAn.innerHTML = '';
+        if (anomalies.length === 0) {
+            const li = document.createElement('li');
+            li.textContent = '无异常';
+            elAn.appendChild(li);
+        } else {
+            anomalies.forEach(a=>{ const li=document.createElement('li'); li.textContent=a; elAn.appendChild(li); });
+        }
+    }
+    if (!elCanvas) return;
+    const hasData = tstHours.some(v=>v>0) || sePercents.some(v=>v>0);
+    if (!hasData) { if (elNo) elNo.style.display='block'; } else { if (elNo) elNo.style.display='none'; }
+    if (weeklyChartInstance) { weeklyChartInstance.destroy(); weeklyChartInstance=null; }
+    const ctx = elCanvas.getContext('2d');
+    weeklyChartInstance = new Chart(ctx, {
+        type: 'bar',
+        data: { labels, datasets: [
+            { label: 'TST(小时)', data: tstHours, backgroundColor:'rgba(54,162,235,0.5)', borderColor:'rgba(54,162,235,1)', yAxisID:'y-tst' },
+            { label: 'SE(%)', data: sePercents, type:'line', borderColor:'rgba(255,99,132,1)', backgroundColor:'rgba(255,99,132,0.2)', tension:0.1, yAxisID:'y-se' }
+        ] },
+        options: { responsive:true, maintainAspectRatio:false, plugins:{ legend:{ position:'top' } }, scales:{
+            'y-tst': { position:'left', title:{ display:true, text:'小时' } },
+            'y-se': { position:'right', title:{ display:true, text:'百分比' }, suggestedMin:0, suggestedMax:100 }
+        } }
+    });
+}
+
 // 假设这是您加载历史记录的函数
-function loadAndDisplayHistory() {
-    const diaries = JSON.parse(localStorage.getItem('sleepDiaries')) || [];
-    // ... (您现有加载和显示历史列表的代码) ...
-
-    renderSleepChart(diaries); // <--- 新增：加载历史后渲染图表
-}
-
-// 假设这是您保存日记的事件监听器
-document.getElementById('saveDiaryBtn').addEventListener('click', function() {
-    // ... (您现有保存日记的逻辑) ...
-    // 假设 newDiaryEntry 是新创建的日记对象，并且已添加到 diaries 数组并保存到 localStorage
-    
-    const allDiaries = JSON.parse(localStorage.getItem('sleepDiaries')) || []; // 重新获取所有数据
-    renderSleepChart(allDiaries); // <--- 新增：保存后更新图表
-});
-
-// 假设这是您处理数据导入的逻辑
-// (在导入成功并更新了 localStorage 之后)
-// function handleImportSuccess() {
-//     const allDiaries = JSON.parse(localStorage.getItem('sleepDiaries')) || [];
-//     loadAndDisplayHistory(); // 这会刷新列表并调用 renderSleepChart
-//     // 或者直接调用 renderSleepChart(allDiaries);
-// }
-
-
-// 页面加载时初始化
-document.addEventListener('DOMContentLoaded', function() {
-    // ... (您现有的DOMContentLoaded逻辑，例如加载历史日记) ...
-    loadAndDisplayHistory(); // 这应该会调用 renderSleepChart
-});
-
-
-// 更新图表的辅助函数
-function updateChartAfterDataChange() {
-    const allDiaries = getAllDiariesFromLocalStorage();
-    renderSleepChart(allDiaries);
-}
-
-// 修改saveDiary函数，在保存后更新图表
-const originalSaveDiary = saveDiary;
-saveDiary = function() {
-    originalSaveDiary.apply(this, arguments);
-    // 在保存完成后更新图表
-    setTimeout(updateChartAfterDataChange, 100);
-};
-
-// 修改deleteDiary函数，在删除后更新图表
-const originalDeleteDiary = deleteDiary;
-deleteDiary = function() {
-    originalDeleteDiary.apply(this, arguments);
-    // 在删除完成后更新图表
-    setTimeout(updateChartAfterDataChange, 100);
-};
+// 移除过时的演示代码，统一在应用内部流转
