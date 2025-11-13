@@ -1,6 +1,12 @@
 const DATA_VERSION = 1;
 const DIARY_STORAGE_KEY = 'sleepDiaryEntries';
 const LEGACY_ARRAY_KEY = 'sleepDiaries';
+const QUESTIONNAIRE_STORAGE_KEY = 'sleepQuestionnaires';
+const QUESTIONNAIRE_DATA_VERSION = 2;
+
+function generateId(prefix = 'id') {
+    return `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+}
 
 function parseTimeToMinutes(t) {
     if (!t || typeof t !== 'string' || !t.includes(':')) return null;
@@ -207,6 +213,123 @@ const diaryStore = {
     }
 };
 
+const questionnaireStore = {
+    ensureMigrated: function() {
+        const raw = localStorage.getItem(QUESTIONNAIRE_STORAGE_KEY);
+        if (!raw) {
+            localStorage.setItem(QUESTIONNAIRE_STORAGE_KEY, '[]');
+            return;
+        }
+        let parsed;
+        try {
+            parsed = JSON.parse(raw);
+        } catch {
+            localStorage.setItem(QUESTIONNAIRE_STORAGE_KEY, '[]');
+            return;
+        }
+        if (Array.isArray(parsed)) {
+            return;
+        }
+        if (parsed && typeof parsed === 'object') {
+            const converted = [];
+            Object.values(parsed).forEach(entry => {
+                if (entry && entry.date && entry.questionnaireId) {
+                    converted.push({
+                        id: entry.id || generateId(entry.questionnaireId || 'qn'),
+                        questionnaireId: entry.questionnaireId,
+                        date: entry.date,
+                        answers: entry.answers || {},
+                        score: entry.score ?? null,
+                        severity: entry.severity ?? null,
+                        components: entry.components || null,
+                        derived: entry.derived || null,
+                        createdAt: entry.createdAt || `${entry.date}T00:00:00.000Z`,
+                        updatedAt: entry.updatedAt || `${entry.date}T00:00:00.000Z`,
+                        version: entry.version || QUESTIONNAIRE_DATA_VERSION
+                    });
+                }
+            });
+            localStorage.setItem(QUESTIONNAIRE_STORAGE_KEY, JSON.stringify(converted));
+            return;
+        }
+        localStorage.setItem(QUESTIONNAIRE_STORAGE_KEY, '[]');
+    },
+    getAll: function() {
+        const raw = localStorage.getItem(QUESTIONNAIRE_STORAGE_KEY);
+        if (!raw) return [];
+        try {
+            const arr = JSON.parse(raw);
+            return Array.isArray(arr) ? arr : [];
+        } catch {
+            return [];
+        }
+    },
+    saveAll: function(entries) {
+        localStorage.setItem(QUESTIONNAIRE_STORAGE_KEY, JSON.stringify(entries));
+    },
+    get: function(id) {
+        return this.getAll().find(e => e.id === id) || null;
+    },
+    add: function(entry) {
+        const entries = this.getAll();
+        entries.push(entry);
+        this.saveAll(entries);
+        return entry;
+    },
+    update: function(entry) {
+        const entries = this.getAll();
+        const idx = entries.findIndex(e => e.id === entry.id);
+        if (idx !== -1) {
+            entries[idx] = entry;
+            this.saveAll(entries);
+        }
+        return entry;
+    },
+    remove: function(id) {
+        const entries = this.getAll().filter(e => e.id !== id);
+        this.saveAll(entries);
+    },
+    latestWithinRange: function(questionnaireId, start, end) {
+        const entries = this.getAll();
+        let latest = null;
+        entries.forEach(entry => {
+            if (!entry || entry.questionnaireId !== questionnaireId || !entry.date) return;
+            const d = new Date(entry.date);
+            d.setHours(0, 0, 0, 0);
+            if (d < start || d > end) return;
+            const entryTime = new Date(entry.updatedAt || entry.createdAt || entry.date).getTime();
+            if (!latest || entryTime > new Date(latest.updatedAt || latest.createdAt || latest.date).getTime()) {
+                latest = entry;
+            }
+        });
+        return latest;
+    },
+    upsertFromImport: function(entry) {
+        if (!entry || !entry.date || !entry.questionnaireId) return;
+        const normalized = {
+            id: entry.id || generateId(entry.questionnaireId || 'qn'),
+            questionnaireId: entry.questionnaireId,
+            date: entry.date,
+            answers: entry.answers || {},
+            score: entry.score ?? null,
+            severity: entry.severity ?? null,
+            components: entry.components || null,
+            derived: entry.derived || null,
+            createdAt: entry.createdAt || entry.updatedAt || new Date().toISOString(),
+            updatedAt: entry.updatedAt || entry.createdAt || new Date().toISOString(),
+            version: entry.version || QUESTIONNAIRE_DATA_VERSION
+        };
+        const entries = this.getAll();
+        const idx = entries.findIndex(e => e.id === normalized.id);
+        if (idx !== -1) {
+            entries[idx] = normalized;
+        } else {
+            entries.push(normalized);
+        }
+        this.saveAll(entries);
+    }
+};
+
 // 等待整个 HTML 文档加载完成后再执行脚本
 document.addEventListener('DOMContentLoaded', () => {
     // --- DOM 元素获取 ---
@@ -281,6 +404,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // 初始化函数
     function initializeApp() {
         diaryStore.ensureMigrated();
+        questionnaireStore.ensureMigrated();
         // 1. 设置日期选择器默认值为今天
         const today = new Date();
         // 格式化日期为 YYYY-MM-DD，以匹配 <input type="date"> 的 value 格式
@@ -340,6 +464,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const delQ=document.getElementById('deleteQuestionnaireBtn');
         if(saveQ) saveQ.addEventListener('click', saveCurrentQuestionnaire);
         if(delQ) delQ.addEventListener('click', deleteCurrentQuestionnaire);
+        renderQuestionnaireForm('psqi');
 
 
         // 8. 加载当天的日记（如果存在）
@@ -833,7 +958,7 @@ document.addEventListener('DOMContentLoaded', () => {
             avgTSTMinutes: cntTst ? Math.round(sumTstMin/cntTst) : null,
             avgSEPercent: cntSe ? parseFloat((sumSe/cntSe).toFixed(1)) : null
         };
-        payload.questionnaires = questionnaireValues();
+        payload.questionnaires = questionnaireStore.getAll();
         const jsonData = JSON.stringify(payload, null, 2);
         const blob = new Blob([jsonData], { type: 'application/json' });
         const url = URL.createObjectURL(blob);
@@ -868,6 +993,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
                 let importCount = 0;
                 let overwriteCount = 0;
+                let questionnaireImportCount = 0;
                 if (Array.isArray(importedData.diaries)) {
                     const res = diaryStore.fromJSON(importedData);
                     importCount = res.imported;
@@ -887,12 +1013,16 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
                 if (Array.isArray(importedData.questionnaires)) {
                     importedData.questionnaires.forEach(e => {
-                        if (e && e.date && e.questionnaireId) questionnaireSet(e.date, e.questionnaireId, e);
+                        if (e && e.date && e.questionnaireId) {
+                            questionnaireStore.upsertFromImport(e);
+                            questionnaireImportCount++;
+                        }
                     });
                 }
-                alert(`数据导入完成！\n新增记录: ${importCount}条\n覆盖记录: ${overwriteCount}条`);
+                alert(`数据导入完成！\n新增记录: ${importCount}条\n覆盖记录: ${overwriteCount}条\n量表条目: ${questionnaireImportCount}条`);
                 renderHistoryList();
                 loadDiaryForDate(datePicker.value);
+                renderQuestionnaireHistory();
 
             } catch (error) {
                 console.error('导入失败:', error);
@@ -978,136 +1108,325 @@ document.addEventListener('DOMContentLoaded', () => {
 let sleepChartInstance = null; // 用于存储Chart.js图表实例
 let weeklyChartInstance = null;
 let currentWeekOffset = 0;
-const QUESTIONNAIRE_STORAGE_KEY = 'sleepQuestionnaires';
-const questionnaires = { psqi: { id:'psqi', title:'PSQI', questions:[ { key:'sleep_quality', text:'主观睡眠质量', type:'select', options:[ {label:'非常好',value:0},{label:'较好',value:1},{label:'一般',value:2},{label:'较差',value:3} ] }, { key:'sleep_latency_minutes', text:'入睡耗时(分钟)', type:'number' }, { key:'sleep_latency_freq', text:'过去一月入睡困难频率', type:'select', options:[ {label:'无',value:0},{label:'每周<1次',value:1},{label:'每周1-2次',value:2},{label:'每周≥3次',value:3} ] }, { key:'sleep_duration_hours', text:'睡眠时长(小时)', type:'number' }, { key:'bedtime', text:'惯常上床时间', type:'time' }, { key:'wake_time', text:'惯常起床时间', type:'time' }, { key:'disturbances_freq', text:'睡眠干扰频率综合', type:'select', options:[ {label:'无',value:0},{label:'每周<1次',value:1},{label:'每周1-2次',value:2},{label:'每周≥3次',value:3} ] }, { key:'medication_freq', text:'助眠药物使用频率', type:'select', options:[ {label:'无',value:0},{label:'每周<1次',value:1},{label:'每周1-2次',value:2},{label:'每周≥3次',value:3} ] }, { key:'daytime_awake_freq', text:'白天保持清醒困难频率', type:'select', options:[ {label:'无',value:0},{label:'每周<1次',value:1},{label:'每周1-2次',value:2},{label:'每周≥3次',value:3} ] }, { key:'daytime_enthusiasm_freq', text:'热情下降频率', type:'select', options:[ {label:'无',value:0},{label:'每周<1次',value:1},{label:'每周1-2次',value:2},{label:'每周≥3次',value:3} ] } ], scoringFn: function(ans){ function recodeLatency(mins){ if(mins==null) return null; if(mins<=15) return 0; if(mins<=30) return 1; if(mins<=60) return 2; return 3; } function recodeDuration(h){ if(h==null) return null; if(h>7) return 0; if(h>=6) return 1; if(h>=5) return 2; return 3; } const bedM=parseTimeToMinutes(ans.bedtime); const wakeM=parseTimeToMinutes(ans.wake_time); let tib=null; if(bedM!=null && wakeM!=null){ tib = wakeM>=bedM ? (wakeM-bedM) : ((24*60-bedM)+wakeM); } const durM=typeof ans.sleep_duration_hours==='number'?ans.sleep_duration_hours*60:null; let se=null; if(durM!=null && tib!=null && tib>0){ se=(durM/tib)*100; } function recodeSE(v){ if(v==null) return null; if(v>=85) return 0; if(v>=75) return 1; if(v>=65) return 2; return 3; } const c1=typeof ans.sleep_quality==='number'?ans.sleep_quality:null; const c2a=recodeLatency(typeof ans.sleep_latency_minutes==='number'?ans.sleep_latency_minutes:null); const c2b=typeof ans.sleep_latency_freq==='number'?ans.sleep_latency_freq:null; let c2=null; if(c2a!=null && c2b!=null){ const s=c2a+c2b; if(s===0) c2=0; else if(s<=2) c2=1; else if(s<=4) c2=2; else c2=3; } const c3=recodeDuration(typeof ans.sleep_duration_hours==='number'?ans.sleep_duration_hours:null); const c4=recodeSE(se); const c5=typeof ans.disturbances_freq==='number'?ans.disturbances_freq:null; const c6=typeof ans.medication_freq==='number'?ans.medication_freq:null; const dSum=(typeof ans.daytime_awake_freq==='number'?ans.daytime_awake_freq:null)+(typeof ans.daytime_enthusiasm_freq==='number'?ans.daytime_enthusiasm_freq:null); let c7=null; if(dSum!=null){ if(dSum===0) c7=0; else if(dSum<=2) c7=1; else if(dSum<=4) c7=2; else c7=3; } const comps=[c1,c2,c3,c4,c5,c6,c7]; if(comps.some(v=>v==null)) return {score:null,severity:null}; const total=comps.reduce((a,b)=>a+b,0); let sev=null; if(total<=5) sev='正常'; else if(total<=10) sev='轻度问题'; else if(total<=15) sev='中度问题'; else sev='重度问题'; return {score:total,severity:sev}; } }, isi: { id:'isi', title:'ISI', questions:[ {key:'q1',text:'入睡困难程度',type:'select',options:[{label:'无',value:0},{label:'轻微',value:1},{label:'中等',value:2},{label:'严重',value:3},{label:'非常严重',value:4}]}, {key:'q2',text:'维持睡眠困难程度',type:'select',options:[{label:'无',value:0},{label:'轻微',value:1},{label:'中等',value:2},{label:'严重',value:3},{label:'非常严重',value:4}]}, {key:'q3',text:'早醒问题程度',type:'select',options:[{label:'无',value:0},{label:'轻微',value:1},{label:'中等',value:2},{label:'严重',value:3},{label:'非常严重',value:4}]}, {key:'q4',text:'对睡眠问题的满意度',type:'select',options:[{label:'非常满意',value:0},{label:'满意',value:1},{label:'一般',value:2},{label:'不满意',value:3},{label:'非常不满意',value:4}]}, {key:'q5',text:'日间功能受损程度',type:'select',options:[{label:'无',value:0},{label:'轻微',value:1},{label:'中等',value:2},{label:'严重',value:3},{label:'非常严重',value:4}]}, {key:'q6',text:'睡眠问题可被他人察觉',type:'select',options:[{label:'不可察觉',value:0},{label:'轻微',value:1},{label:'中等',value:2},{label:'明显',value:3},{label:'非常明显',value:4}]}, {key:'q7',text:'对睡眠问题的担忧程度',type:'select',options:[{label:'不担忧',value:0},{label:'轻微',value:1},{label:'中等',value:2},{label:'严重',value:3},{label:'非常严重',value:4}]} ], scoringFn: function(ans){ const keys=['q1','q2','q3','q4','q5','q6','q7']; if(keys.some(k=>typeof ans[k]!=='number')) return {score:null,severity:null}; const total=keys.reduce((s,k)=>s+ans[k],0); let sev; if(total<=7) sev='正常'; else if(total<=14) sev='阈下失眠'; else if(total<=21) sev='中度失眠'; else sev='重度失眠'; return {score:total,severity:sev}; } } };
-function questionnaireGetMap(){ const raw=localStorage.getItem(QUESTIONNAIRE_STORAGE_KEY); if(!raw) return {}; try{ const obj=JSON.parse(raw); return typeof obj==='object'&&obj?obj:{}; }catch{ return {}; } }
-function questionnaireSet(date,id,entry){ const all=questionnaireGetMap(); all[`${date}:${id}`]=entry; localStorage.setItem(QUESTIONNAIRE_STORAGE_KEY, JSON.stringify(all)); }
-function questionnaireRemove(date,id){ const all=questionnaireGetMap(); delete all[`${date}:${id}`]; localStorage.setItem(QUESTIONNAIRE_STORAGE_KEY, JSON.stringify(all)); }
-function questionnaireValues(){ return Object.values(questionnaireGetMap()); }
+const PSQI_FREQ_OPTIONS = [
+    { label: '0 - 无', value: 0 },
+    { label: '1 - 每周<1次', value: 1 },
+    { label: '2 - 每周1-2次', value: 2 },
+    { label: '3 - 每周≥3次', value: 3 },
+];
 
+const PSQI_QUALITY_OPTIONS = [
+    { label: '0 - 很好', value: 0 },
+    { label: '1 - 较好', value: 1 },
+    { label: '2 - 较差', value: 2 },
+    { label: '3 - 很差', value: 3 },
+];
+
+const PSQI_DAYTIME_ENERGY_OPTIONS = [
+    { label: '0 - 没有', value: 0 },
+    { label: '1 - 偶尔有', value: 1 },
+    { label: '2 - 有时有', value: 2 },
+    { label: '3 - 经常有', value: 3 },
+];
+
+const isiOptionSet = [
+    { label: '0 - 无', value: 0 },
+    { label: '1 - 轻度', value: 1 },
+    { label: '2 - 中度', value: 2 },
+    { label: '3 - 重度', value: 3 },
+    { label: '4 - 极重度', value: 4 },
+];
+
+const questionnaires = {
+    psqi: {
+        id: 'psqi',
+        title: '匹兹堡睡眠质量指数 (PSQI)',
+        questions: [
+            { key: 'q1_bedtime', text: '1. 近1个月，晚上上床睡觉通常是几点？', type: 'time' },
+            { key: 'q2_latency_minutes', text: '2. 近1个月，从上床到入睡通常需要多少分钟？', type: 'number', min: 0, step: 5, placeholder: '分钟' },
+            { key: 'q3_wakeup_time', text: '3. 近1个月，通常早上几点起床？', type: 'time' },
+            { key: 'q4_sleep_hours', text: '4. 近1个月，每夜通常实际睡眠多少小时？', type: 'number', min: 0, step: 0.5, placeholder: '小时' },
+            { key: 'q5a_insomnia_onset', text: '5a. 入睡困难（30分钟内不能入睡）', type: 'select', options: PSQI_FREQ_OPTIONS },
+            { key: 'q5b_midawake', text: '5b. 夜间易醒或早醒', type: 'select', options: PSQI_FREQ_OPTIONS },
+            { key: 'q5c_toilet', text: '5c. 夜间去厕所', type: 'select', options: PSQI_FREQ_OPTIONS },
+            { key: 'q5d_breath', text: '5d. 呼吸不畅', type: 'select', options: PSQI_FREQ_OPTIONS },
+            { key: 'q5e_snore', text: '5e. 咳嗽或鼾声大', type: 'select', options: PSQI_FREQ_OPTIONS },
+            { key: 'q5f_cold', text: '5f. 感觉冷', type: 'select', options: PSQI_FREQ_OPTIONS },
+            { key: 'q5g_hot', text: '5g. 感觉热', type: 'select', options: PSQI_FREQ_OPTIONS },
+            { key: 'q5h_nightmare', text: '5h. 做恶梦', type: 'select', options: PSQI_FREQ_OPTIONS },
+            { key: 'q5i_pain', text: '5i. 疼痛不适', type: 'select', options: PSQI_FREQ_OPTIONS },
+            { key: 'q5j_other', text: '5j. 其他影响睡眠的事情', type: 'select', options: PSQI_FREQ_OPTIONS },
+            { key: 'q5j_other_detail', text: '如有其他影响睡眠的情况，请描述', type: 'text', placeholder: '可选' },
+            { key: 'q6_sleep_quality', text: '6. 总的来说，您认为自己的睡眠质量', type: 'select', options: PSQI_QUALITY_OPTIONS },
+            { key: 'q7_medication_freq', text: '7. 近1个月，您用药物催眠的情况', type: 'select', options: PSQI_FREQ_OPTIONS },
+            { key: 'q8_daytime_sleepy', text: '8. 近1个月，您常感到困倦吗', type: 'select', options: PSQI_FREQ_OPTIONS },
+            { key: 'q9_energy', text: '9. 近1个月，您做事情的精力不足吗', type: 'select', options: PSQI_DAYTIME_ENERGY_OPTIONS },
+        ],
+        scoringFn: function(ans) {
+            const recodeLatency = (mins) => {
+                if (mins == null) return null;
+                if (mins <= 15) return 0;
+                if (mins <= 30) return 1;
+                if (mins <= 60) return 2;
+                return 3;
+            };
+            const recodeDuration = (hours) => {
+                if (hours == null) return null;
+                if (hours > 7) return 0;
+                if (hours >= 6) return 1;
+                if (hours >= 5) return 2;
+                return 3;
+            };
+            const recodeSE = (percent) => {
+                if (percent == null) return null;
+                if (percent >= 85) return 0;
+                if (percent >= 75) return 1;
+                if (percent >= 65) return 2;
+                return 3;
+            };
+            const recodeDisturbance = (sum) => {
+                if (sum == null) return null;
+                if (sum === 0) return 0;
+                if (sum <= 9) return 1;
+                if (sum <= 18) return 2;
+                return 3;
+            };
+
+            const latencyMinutes = typeof ans.q2_latency_minutes === 'number' ? ans.q2_latency_minutes : null;
+            const sleepDurationMinutes = typeof ans.q4_sleep_hours === 'number' ? ans.q4_sleep_hours * 60 : null;
+            const bedtimeMinutes = parseTimeToMinutes(ans.q1_bedtime);
+            const wakeMinutes = parseTimeToMinutes(ans.q3_wakeup_time);
+            let tib = null;
+            if (bedtimeMinutes !== null && wakeMinutes !== null) {
+                tib = wakeMinutes >= bedtimeMinutes ? (wakeMinutes - bedtimeMinutes) : ((24 * 60 - bedtimeMinutes) + wakeMinutes);
+            }
+            let sleepEfficiency = null;
+            if (sleepDurationMinutes !== null && tib !== null && tib > 0) {
+                sleepEfficiency = (sleepDurationMinutes / tib) * 100;
+            }
+
+            const components = {
+                subjectiveQuality: typeof ans.q6_sleep_quality === 'number' ? ans.q6_sleep_quality : null,
+                sleepLatency: null,
+                sleepDuration: recodeDuration(typeof ans.q4_sleep_hours === 'number' ? ans.q4_sleep_hours : null),
+                sleepEfficiency: recodeSE(sleepEfficiency),
+                sleepDisturbance: null,
+                medicationUse: typeof ans.q7_medication_freq === 'number' ? ans.q7_medication_freq : null,
+                daytimeDysfunction: null,
+            };
+
+            const latencyRecode = recodeLatency(latencyMinutes);
+            const latencyFreq = typeof ans.q5a_insomnia_onset === 'number' ? ans.q5a_insomnia_onset : null;
+            if (latencyRecode !== null && latencyFreq !== null) {
+                const sum = latencyRecode + latencyFreq;
+                if (sum === 0) components.sleepLatency = 0;
+                else if (sum <= 2) components.sleepLatency = 1;
+                else if (sum <= 4) components.sleepLatency = 2;
+                else components.sleepLatency = 3;
+            }
+
+            const disturbanceKeys = [
+                'q5b_midawake',
+                'q5c_toilet',
+                'q5d_breath',
+                'q5e_snore',
+                'q5f_cold',
+                'q5g_hot',
+                'q5h_nightmare',
+                'q5i_pain',
+                'q5j_other',
+            ];
+            if (disturbanceKeys.every(key => typeof ans[key] === 'number')) {
+                const sum = disturbanceKeys.reduce((acc, key) => acc + ans[key], 0);
+                components.sleepDisturbance = recodeDisturbance(sum);
+            }
+
+            const daytimeFreq = typeof ans.q8_daytime_sleepy === 'number' ? ans.q8_daytime_sleepy : null;
+            const energyFreq = typeof ans.q9_energy === 'number' ? ans.q9_energy : null;
+            if (daytimeFreq !== null && energyFreq !== null) {
+                const sum = daytimeFreq + energyFreq;
+                if (sum === 0) components.daytimeDysfunction = 0;
+                else if (sum <= 2) components.daytimeDysfunction = 1;
+                else if (sum <= 4) components.daytimeDysfunction = 2;
+                else components.daytimeDysfunction = 3;
+            }
+
+            const componentValues = Object.values(components);
+            if (componentValues.some(value => value === null)) {
+                return { score: null, severity: null, components };
+            }
+
+            const total = componentValues.reduce((acc, value) => acc + value, 0);
+            let severity;
+            if (total <= 5) severity = '正常';
+            else if (total <= 10) severity = '轻度问题';
+            else if (total <= 15) severity = '中度问题';
+            else severity = '重度问题';
+
+            return {
+                score: total,
+                severity,
+                components,
+                derived: {
+                    sleepEfficiency: sleepEfficiency != null ? parseFloat(sleepEfficiency.toFixed(1)) : null,
+                    timeInBedMinutes: tib,
+                    sleepDurationMinutes,
+                },
+            };
+        },
+    },
+    isi: {
+        id: 'isi',
+        title: '失眠严重程度指数量表 (ISI)',
+        questions: [
+            { key: 'q1', text: '1. 入睡困难', type: 'select', options: isiOptionSet },
+            { key: 'q2', text: '2. 睡眠维持困难', type: 'select', options: isiOptionSet },
+            { key: 'q3', text: '3. 早醒问题', type: 'select', options: isiOptionSet },
+            {
+                key: 'q4',
+                text: '4. 您认为失眠在多大程度上影响了您的日常功能？',
+                type: 'select',
+                options: isiOptionSet,
+            },
+            {
+                key: 'q5',
+                text: '5. 您的失眠问题对生活质量的影响（别人眼中的表现）',
+                type: 'select',
+                options: isiOptionSet,
+            },
+            {
+                key: 'q6',
+                text: '6. 您对目前睡眠问题的担心/痛苦程度',
+                type: 'select',
+                options: isiOptionSet,
+            },
+            {
+                key: 'q7',
+                text: '7. 您对目前睡眠模式的满意度',
+                type: 'select',
+                options: [
+                    { label: '0 - 非常满意', value: 0 },
+                    { label: '1 - 满意', value: 1 },
+                    { label: '2 - 不太满意', value: 2 },
+                    { label: '3 - 不满意', value: 3 },
+                    { label: '4 - 非常不满意', value: 4 },
+                ],
+            },
+        ],
+        scoringFn: function(ans) {
+            const keys = ['q1', 'q2', 'q3', 'q4', 'q5', 'q6', 'q7'];
+            if (keys.some(key => typeof ans[key] !== 'number')) {
+                return { score: null, severity: null };
+            }
+            const total = keys.reduce((sum, key) => sum + ans[key], 0);
+            let severity;
+            if (total <= 7) severity = '正常';
+            else if (total <= 14) severity = '阈下失眠';
+            else if (total <= 21) severity = '中度失眠';
+            else severity = '重度失眠';
+            return {
+                score: total,
+                severity,
+                components: keys.reduce((acc, key) => {
+                    acc[key] = ans[key];
+                    return acc;
+                }, {})
+            };
+        }
+    }
+};
 
 /**
  * 准备数据并渲染睡眠数据图表
- * @param {Array<Object>} diaryEntries - 所有日记条目的数组
+ * @param {Object<string, Object>} diaryEntries
  */
-function renderSleepChart(diaryEntries) { // diaryEntries 是一个以日期为键的日记对象
+function renderSleepChart(diaryEntries) {
     console.log('开始渲染睡眠图表...');
     const chartCanvas = document.getElementById('sleepDataChart');
     const noDataMessage = document.getElementById('chartNoDataMessage');
 
     if (!chartCanvas) {
-        console.error('图表 Canvas 元素未找到!');
-        if (noDataMessage) noDataMessage.textContent = '图表容器丢失。';
+        console.error('图表 Canvas 元素未找到');
+        if (noDataMessage) noDataMessage.textContent = '图表容器丢失';
         return;
     }
-    
-    // 确保Canvas元素可见
-    chartCanvas.style.display = 'block';
-    
-    if (!noDataMessage) {
-        console.error('图表无数据提示元素未找到!');
-    }
 
-    // 0. 检查并销毁已存在的图表实例，以便重新渲染
+    chartCanvas.style.display = 'block';
+
     if (sleepChartInstance) {
         sleepChartInstance.destroy();
         sleepChartInstance = null;
     }
 
-    // 1. 数据处理和提取
-    // 将日记对象的值（即每个日记条目）转换为数组
-    const entriesArray = Object.values(diaryEntries); 
+    const entriesArray = Object.values(diaryEntries || {});
     console.log(`处理图表数据：找到 ${entriesArray.length} 条记录`);
-    
-    const sortedEntries = entriesArray
-        .filter(entry => entry && entry.date) // 过滤掉无效的 entry 或没有日期的 entry
-        .sort((a, b) => new Date(a.date) - new Date(b.date)); // 按日期对数组进行排序
 
-    // 提取图表所需的标签（日期）、睡眠总时长(TST)和睡眠效率(SE)
-    const labels = sortedEntries.map(entry => entry.date.substring(5)); // X轴：日期（只显示月-日）
-    
-    
-    // 基准值
-    const TST_BASELINE = 4.5; // 睡眠总时长基准值（小时）
-    const SE_BASELINE = 85;   // 睡眠效率基准值（百分比）
-    
-    // entry.metrics.TST 应为数值 (小时), entry.metrics.SE 应为数值 (百分比)
+    const sortedEntries = entriesArray
+        .filter(entry => entry && entry.date)
+        .sort((a, b) => new Date(a.date) - new Date(b.date));
+
+    const labels = sortedEntries.map(entry => entry.date.substring(5));
+    const TST_BASELINE = 4.5;
+    const SE_BASELINE = 85;
     const tstData = sortedEntries.map(entry => (entry.metrics && typeof entry.metrics.TST === 'number') ? entry.metrics.TST : 0);
     const seData = sortedEntries.map(entry => (entry.metrics && typeof entry.metrics.SE === 'number') ? entry.metrics.SE : 0);
-    
-    // 变换数据（减去基准值）
     const tstTransformed = tstData.map(value => value - TST_BASELINE);
     const seTransformed = seData.map(value => value - SE_BASELINE);
 
-    // 2. 检查是否有足够的数据
-    if (labels.length < 1) { // 如果没有有效数据点
-        chartCanvas.style.display = 'none'; // 隐藏canvas
+    if (labels.length === 0) {
+        chartCanvas.style.display = 'none';
         if (noDataMessage) {
-            noDataMessage.style.display = 'block'; // 显示无数据提示
-            noDataMessage.textContent = '暂无足够数据进行可视化。'; // 确保消息正确
+            noDataMessage.style.display = 'block';
+            noDataMessage.textContent = '暂无足够数据进行可视化';
         }
         return;
-    } else {
-        chartCanvas.style.display = 'block'; // 显示canvas
-        if (noDataMessage) noDataMessage.style.display = 'none'; // 隐藏无数据提示
+    } else if (noDataMessage) {
+        noDataMessage.style.display = 'none';
     }
 
-    // 3. Chart.js 配置对象
     const chartConfig = {
-        type: 'bar', // 修改为柱状图
-
+        type: 'bar',
         data: {
-            labels: labels, // X轴标签 (日期)
+            labels,
             datasets: [
                 {
-                    label: '睡眠总时长',      // 数据系列1的标签
-                    data: tstTransformed,    // 使用变换后的数据
-                    backgroundColor: 'rgba(75, 192, 192, 0.5)', // 柱状图填充颜色
-                    borderColor: 'rgba(75, 192, 192, 1)',    // 柱状图边框颜色
-                    borderWidth: 1,          // 柱状图边框宽度
-                    yAxisID: 'y-tst',        // 关联到左侧Y轴
+                    label: '睡眠总时长',
+                    data: tstTransformed,
+                    backgroundColor: 'rgba(75, 192, 192, 0.5)',
+                    borderColor: 'rgba(75, 192, 192, 1)',
+                    borderWidth: 1,
+                    yAxisID: 'y-tst',
                 },
                 {
-                    label: '睡眠效率',        // 数据系列2的标签
-                    data: seTransformed,     // 使用变换后的数据
-                    type: 'line',            // 保持睡眠效率为折线图
-                    borderColor: 'rgba(153, 102, 255, 1)',    // 折线颜色
-                    backgroundColor: 'rgba(153, 102, 255, 0.2)', // 折线下方填充颜色
-                    tension: 0.1,            // 折线平滑度
-                    yAxisID: 'y-se',         // 关联到右侧Y轴
+                    label: '睡眠效率',
+                    data: seTransformed,
+                    type: 'line',
+                    borderColor: 'rgba(153, 102, 255, 1)',
+                    backgroundColor: 'rgba(153, 102, 255, 0.15)',
+                    tension: 0.1,
+                    yAxisID: 'y-se',
                 }
             ]
         },
         options: {
-            responsive: true,       // 图表将响应容器大小变化
-            maintainAspectRatio: false, // 允许图表高度独立于宽度变化
-            interaction: {
-                mode: 'index',
-                intersect: false,
-            },
+            responsive: true,
+            maintainAspectRatio: false,
+            interaction: { mode: 'index', intersect: false },
             plugins: {
                 title: {
                     display: true,
-                    text: '睡眠数据趋势 (基准: 4.5小时, 85%)'
+                    text: '睡眠数据趋势（基准：4.5 小时 / 85%）'
                 },
                 tooltip: {
                     callbacks: {
-                        // 自定义提示框显示原始值和与基准的差异
                         label: function(context) {
-                            let label = context.dataset.label || '';
-                            if (label) {
-                                label += ': ';
+                            const datasetLabel = context.dataset.label || '';
+                            if (context.datasetIndex === 0) {
+                                const raw = context.raw + TST_BASELINE;
+                                return `${datasetLabel}: ${raw.toFixed(1)} 小时（相对基准 ${context.raw.toFixed(1)}）`;
                             }
-                            if (context.datasetIndex === 0) { // TST
-                                const originalValue = context.raw + TST_BASELINE;
-                                label += originalValue.toFixed(1) + ' 小时';
-                                label += ' (与基准差: ' + context.raw.toFixed(1) + ' 小时)';
-                            } else if (context.datasetIndex === 1) { // SE
-                                const originalValue = context.raw + SE_BASELINE;
-                                label += originalValue.toFixed(0) + '%';
-                                label += ' (与基准差: ' + context.raw.toFixed(0) + '%)';
-                            }
-                            return label;
+                            const raw = context.raw + SE_BASELINE;
+                            return `${datasetLabel}: ${raw.toFixed(0)}%（相对基准 ${context.raw.toFixed(0)}%）`;
                         }
                     }
                 },
@@ -1117,80 +1436,35 @@ function renderSleepChart(diaryEntries) { // diaryEntries 是一个以日期为�
                 }
             },
             scales: {
-                x: {
-                    title: {
-                        display: true,
-                        text: '日期'
-                    }
-                },
+                x: { title: { display: true, text: '日期' } },
                 'y-tst': {
                     type: 'linear',
-                    display: true,
                     position: 'left',
-                    title: {
-                        display: true,
-                        text: '睡眠总时长 (小时)'
-                    },
-                    // 关键部分：调整刻度以显示原始值
-                    ticks: {
-                        callback: function(value) {
-                            return (value + TST_BASELINE).toFixed(1);
-                        }
-                    },
-                    // 添加基准线
+                    title: { display: true, text: '睡眠总时长（小时）' },
+                    ticks: { callback: value => (value + TST_BASELINE).toFixed(1) },
                     grid: {
-                        color: function(context) {
-                            if (context.tick.value === 0) {
-                                return 'rgba(75, 192, 192, 0.5)'; // 基准线
-                            }
-                            return 'rgba(0, 0, 0, 0.1)';
-                        },
-                        lineWidth: function(context) {
-                            if (context.tick.value === 0) {
-                                return 2; // 基准线加粗
-                            }
-                            return 1;
-                        }
+                        color: context => context.tick.value === 0 ? 'rgba(75, 192, 192, 0.5)' : 'rgba(0, 0, 0, 0.1)',
+                        lineWidth: context => context.tick.value === 0 ? 2 : 1
                     }
                 },
                 'y-se': {
                     type: 'linear',
-                    display: true,
                     position: 'right',
-                    title: {
-                        display: true,
-                        text: '睡眠效率 (%)'
-                    },
-                    // 关键部分：调整刻度以显示原始值
-                    ticks: {
-                        callback: function(value) {
-                            return (value + SE_BASELINE).toFixed(0);
-                        }
-                    },
-                    // 添加基准线
+                    title: { display: true, text: '睡眠效率（%）' },
+                    ticks: { callback: value => (value + SE_BASELINE).toFixed(0) },
                     grid: {
-                        color: function(context) {
-                            if (context.tick.value === 0) {
-                                return 'rgba(255, 0, 0, 0.5)'; // 红色基准线
-                            }
-                            return 'rgba(0, 0, 0, 0.1)';
-                        },
-                        lineWidth: function(context) {
-                            if (context.tick.value === 0) {
-                                return 2; // 基准线加粗
-                            }
-                            return 1;
-                        }
+                        color: context => context.tick.value === 0 ? 'rgba(255, 99, 132, 0.4)' : 'rgba(0, 0, 0, 0.1)',
+                        lineWidth: context => context.tick.value === 0 ? 2 : 1
                     }
                 }
             }
         }
     };
 
-    // 4. 创建新的Chart实例
     const ctx = chartCanvas.getContext('2d');
     sleepChartInstance = new Chart(ctx, chartConfig);
 }
+
 
 function getWeekRange(offset) {
     const end = new Date();
@@ -1311,103 +1585,249 @@ function renderWeeklySummary() {
             'y-se': { position:'right', title:{ display:true, text:'百分比' }, suggestedMin:0, suggestedMax:100 }
         } }
     });
-    const qMap = questionnaireGetMap();
     const label = document.getElementById('weeklyQuestionnaireSummary');
-    if(label){
-        let latestPsqi=null, latestIsi=null;
-        for(const k of Object.keys(qMap)){
-            const entry=qMap[k];
-            const d=new Date(entry.date);
-            d.setHours(0,0,0,0);
-            if(d>=range.start && d<=range.end){
-                if(entry.questionnaireId==='psqi') latestPsqi=entry;
-                if(entry.questionnaireId==='isi') latestIsi=entry;
-            }
-        }
-        const parts=[];
-        if(latestPsqi) parts.push(`本周 PSQI：${latestPsqi.score}（${latestPsqi.severity||'-'}）`);
-        if(latestIsi) parts.push(`本周 ISI：${latestIsi.score}（${latestIsi.severity||'-'}）`);
-        label.textContent = parts.length?parts.join('；'):'本周暂无量表数据';
+    if (label) {
+        const latestPsqi = questionnaireStore.latestWithinRange('psqi', range.start, range.end);
+        const latestIsi = questionnaireStore.latestWithinRange('isi', range.start, range.end);
+        const parts = [];
+        if (latestPsqi) parts.push(`本周 PSQI：${latestPsqi.score ?? '-'}（${latestPsqi.severity || '-'}）`);
+        if (latestIsi) parts.push(`本周 ISI：${latestIsi.score ?? '-'}（${latestIsi.severity || '-'}）`);
+        label.textContent = parts.length ? parts.join(' ｜ ') : '本周暂无量表数据';
     }
 }
 
-let currentQuestionnaireId=null;
-function renderQuestionnaireForm(id){
-    currentQuestionnaireId=id;
-    const conf=questionnaires[id];
-    const container=document.getElementById('questionnaireFormContainer');
-    if(!container||!conf) return;
-    container.innerHTML='';
-    conf.questions.forEach(q=>{
-        const wrap=document.createElement('div');
-        wrap.className='qn-item';
-        const label=document.createElement('label');
-        label.textContent=q.text;
-        label.setAttribute('for',`qn_${q.key}`);
+let currentQuestionnaireId = null;
+let currentQuestionnaireEntryId = null;
+
+function renderQuestionnaireForm(id, entry = null) {
+    currentQuestionnaireId = id;
+    currentQuestionnaireEntryId = entry?.id || null;
+    const conf = questionnaires[id];
+    const container = document.getElementById('questionnaireFormContainer');
+    if (!container || !conf) return;
+    container.innerHTML = '';
+    const answers = entry?.answers || {};
+    conf.questions.forEach((q) => {
+        const wrap = document.createElement('div');
+        wrap.className = 'qn-item';
+        const label = document.createElement('label');
+        label.textContent = q.text;
+        label.setAttribute('for', `qn_${q.key}`);
         wrap.appendChild(label);
         let input;
-        if(q.type==='select'){
-            input=document.createElement('select');
-            q.options.forEach(opt=>{ const o=document.createElement('option'); o.value=String(opt.value); o.textContent=opt.label; input.appendChild(o); });
-        } else if(q.type==='number'){
-            input=document.createElement('input'); input.type='number';
-        } else if(q.type==='time'){
-            input=document.createElement('input'); input.type='time';
+        if (q.type === 'select') {
+            input = document.createElement('select');
+            const placeholderOpt = document.createElement('option');
+            placeholderOpt.value = '';
+            placeholderOpt.textContent = '-- 请选择 --';
+            input.appendChild(placeholderOpt);
+            q.options.forEach((opt) => {
+                const optionEl = document.createElement('option');
+                optionEl.value = String(opt.value);
+                optionEl.textContent = opt.label;
+                input.appendChild(optionEl);
+            });
+            const val = answers[q.key];
+            if (val !== undefined && val !== null) {
+                input.value = String(val);
+            }
         } else {
-            input=document.createElement('input'); input.type='text';
+            input = document.createElement('input');
+            if (q.type === 'number') {
+                input.type = 'number';
+                if (typeof q.min === 'number') input.min = String(q.min);
+                if (typeof q.max === 'number') input.max = String(q.max);
+                if (typeof q.step === 'number') input.step = String(q.step);
+            } else if (q.type === 'time') {
+                input.type = 'time';
+            } else {
+                input.type = 'text';
+            }
+            if (q.placeholder) input.placeholder = q.placeholder;
+            const val = answers[q.key];
+            if (val !== undefined && val !== null) {
+                input.value = q.type === 'number' ? String(val) : val;
+            }
         }
-        input.id=`qn_${q.key}`;
+        input.id = `qn_${q.key}`;
         wrap.appendChild(input);
         container.appendChild(wrap);
     });
-    const res=document.getElementById('questionnaireResult');
-    if(res) res.textContent='';
+    const res = document.getElementById('questionnaireResult');
+    if (res) {
+        if (entry) {
+            const resultParts = [`得分：${entry.score ?? '-'}（${entry.severity ?? '-'}）`];
+            if (entry.derived?.sleepEfficiency != null) {
+                resultParts.push(`睡眠效率：${entry.derived.sleepEfficiency.toFixed(1)}%`);
+            }
+            res.textContent = resultParts.join(' | ');
+        } else {
+            res.textContent = '';
+        }
+    }
+    const saveBtn = document.getElementById('saveQuestionnaireBtn');
+    if (saveBtn) saveBtn.textContent = entry ? '更新测评' : '保存测评';
+    const deleteBtn = document.getElementById('deleteQuestionnaireBtn');
+    if (deleteBtn) {
+        deleteBtn.disabled = !entry;
+        deleteBtn.title = entry ? '' : '请选择历史记录后删除';
+    }
     renderQuestionnaireHistory();
 }
 
-function collectQuestionnaireAnswers(){
-    const id=currentQuestionnaireId; if(!id) return null;
-    const conf=questionnaires[id]; if(!conf) return null;
-    const ans={};
-    conf.questions.forEach(q=>{
-        const el=document.getElementById(`qn_${q.key}`);
-        if(!el) return;
-        if(q.type==='select') ans[q.key]=parseInt(el.value,10);
-        else if(q.type==='number') ans[q.key]=el.value!==''?parseFloat(el.value):null;
-        else if(q.type==='time') ans[q.key]=el.value||'';
-        else ans[q.key]=el.value||'';
+function collectQuestionnaireAnswers() {
+    const id = currentQuestionnaireId;
+    if (!id) return null;
+    const conf = questionnaires[id];
+    if (!conf) return null;
+    const ans = {};
+    conf.questions.forEach((q) => {
+        const el = document.getElementById(`qn_${q.key}`);
+        if (!el) return;
+        if (q.type === 'select') {
+            const value = el.value;
+            if (value === '') {
+                ans[q.key] = null;
+            } else {
+                const parsed = Number(value);
+                ans[q.key] = Number.isNaN(parsed) ? null : parsed;
+            }
+        } else if (q.type === 'number') {
+            ans[q.key] = el.value === '' ? null : parseFloat(el.value);
+        } else if (q.type === 'time') {
+            ans[q.key] = el.value || '';
+        } else {
+            ans[q.key] = el.value || '';
+        }
     });
     return ans;
 }
 
-function saveCurrentQuestionnaire(){
-    const id=currentQuestionnaireId; if(!id) return;
-    const ans=collectQuestionnaireAnswers(); if(!ans) return;
-    const date=document.getElementById('datePicker')?.value;
-    if(!date) return;
-    const sc=questionnaires[id].scoringFn(ans);
-    const entry={ date, questionnaireId:id, answers:ans, score:sc.score, severity:sc.severity };
-    questionnaireSet(date,id,entry);
-    const res=document.getElementById('questionnaireResult'); if(res) res.textContent=`得分：${entry.score??'-'}（${entry.severity??'-'}）`;
+function saveCurrentQuestionnaire() {
+    const id = currentQuestionnaireId;
+    if (!id) {
+        alert('请先选择要填写的量表。');
+        return;
+    }
+    const conf = questionnaires[id];
+    if (!conf) return;
+    const ans = collectQuestionnaireAnswers();
+    if (!ans) return;
+    const date = document.getElementById('datePicker')?.value || new Date().toISOString().split('T')[0];
+    const scoring = conf.scoringFn(ans);
+    if (scoring.score === null) {
+        alert('请完整填写量表的必填项。');
+        return;
+    }
+    const nowIso = new Date().toISOString();
+    const existing = currentQuestionnaireEntryId ? questionnaireStore.get(currentQuestionnaireEntryId) : null;
+    const entry = {
+        id: currentQuestionnaireEntryId || generateId(id),
+        questionnaireId: id,
+        date,
+        answers: ans,
+        score: scoring.score,
+        severity: scoring.severity,
+        components: scoring.components || null,
+        derived: scoring.derived || null,
+        createdAt: existing?.createdAt || nowIso,
+        updatedAt: nowIso,
+        version: QUESTIONNAIRE_DATA_VERSION
+    };
+    if (existing) {
+        questionnaireStore.update(entry);
+    } else {
+        questionnaireStore.add(entry);
+    }
+    alert('测评已保存！');
+    renderQuestionnaireForm(id, entry);
     renderWeeklySummary();
-    renderQuestionnaireHistory();
 }
 
-function deleteCurrentQuestionnaire(){
-    const id=currentQuestionnaireId; if(!id) return;
-    const date=document.getElementById('datePicker')?.value; if(!date) return;
-    questionnaireRemove(date,id);
-    const res=document.getElementById('questionnaireResult'); if(res) res.textContent='';
+function deleteCurrentQuestionnaire() {
+    if (!currentQuestionnaireEntryId) {
+        alert('请选择要删除的测评记录（先点击历史记录中的查看）。');
+        return;
+    }
+    const entry = questionnaireStore.get(currentQuestionnaireEntryId);
+    if (!entry) {
+        alert('未找到该测评记录。');
+        return;
+    }
+    if (!confirm(`确定要删除 ${entry.date} 的 ${entry.questionnaireId.toUpperCase()} 测评吗？`)) {
+        return;
+    }
+    questionnaireStore.remove(entry.id);
+    currentQuestionnaireEntryId = null;
+    alert('测评已删除。');
+    renderQuestionnaireForm(entry.questionnaireId);
     renderWeeklySummary();
-    renderQuestionnaireHistory();
 }
 
-function renderQuestionnaireHistory(){
-    const list=document.getElementById('questionnaireHistoryList'); if(!list) return;
-    const map=questionnaireGetMap();
-    const arr=Object.values(map).sort((a,b)=>new Date(b.date)-new Date(a.date));
-    list.innerHTML='';
-    arr.slice(0,10).forEach(e=>{ const div=document.createElement('div'); div.textContent=`${e.date} ${e.questionnaireId.toUpperCase()} ${e.score??'-'}（${e.severity??'-'}）`; list.appendChild(div); });
+function loadQuestionnaireEntry(entryId) {
+    const entry = questionnaireStore.get(entryId);
+    if (!entry) {
+        alert('未找到该测评记录。');
+        return;
+    }
+    renderQuestionnaireForm(entry.questionnaireId, entry);
+}
+
+function handleQuestionnaireEntryDelete(entryId) {
+    const entry = questionnaireStore.get(entryId);
+    if (!entry) return;
+    if (!confirm(`确定要删除 ${entry.date} 的 ${entry.questionnaireId.toUpperCase()} 测评吗？`)) {
+        return;
+    }
+    questionnaireStore.remove(entryId);
+    if (currentQuestionnaireEntryId === entryId) {
+        currentQuestionnaireEntryId = null;
+        renderQuestionnaireForm(entry.questionnaireId);
+    }
+    renderQuestionnaireHistory();
+    renderWeeklySummary();
+}
+
+function renderQuestionnaireHistory() {
+    const list = document.getElementById('questionnaireHistoryList');
+    if (!list) return;
+    const entries = questionnaireStore
+        .getAll()
+        .sort((a, b) => new Date(b.updatedAt || b.date) - new Date(a.updatedAt || a.date));
+    list.innerHTML = '';
+    if (entries.length === 0) {
+        list.innerHTML = '<p>暂无测评记录</p>';
+        return;
+    }
+    entries.slice(0, 20).forEach((entry) => {
+        const item = document.createElement('div');
+        item.className = 'qn-history-item';
+        if (entry.id === currentQuestionnaireEntryId) {
+            item.classList.add('active');
+        }
+        const info = document.createElement('div');
+        info.className = 'qn-history-info';
+        info.textContent = `${entry.date} ${entry.questionnaireId.toUpperCase()} 得分：${entry.score ?? '-'}（${entry.severity ?? '-'}）`;
+        item.appendChild(info);
+        if (entry.derived?.sleepEfficiency != null) {
+            const meta = document.createElement('div');
+            meta.className = 'qn-history-meta';
+            meta.textContent = `睡眠效率：${entry.derived.sleepEfficiency.toFixed(1)}%`;
+            item.appendChild(meta);
+        }
+        const actions = document.createElement('div');
+        actions.className = 'qn-history-actions';
+        const viewBtn = document.createElement('button');
+        viewBtn.textContent = '查看';
+        viewBtn.addEventListener('click', () => loadQuestionnaireEntry(entry.id));
+        const deleteBtn = document.createElement('button');
+        deleteBtn.textContent = '删除';
+        deleteBtn.addEventListener('click', () => handleQuestionnaireEntryDelete(entry.id));
+        actions.appendChild(viewBtn);
+        actions.appendChild(deleteBtn);
+        item.appendChild(actions);
+        list.appendChild(item);
+    });
 }
 // 假设这是您加载历史记录的函数
 // 移除过时的演示代码，统一在应用内部流转

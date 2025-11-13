@@ -28,47 +28,49 @@
 
     <!-- 主内容区域 - 调整为单列布局 -->
     <div class="container single-column">
-        
-        <section class="weekly-summary-section">
+        <section class="weekly-summary-section section-card">
             <h2>本周概览</h2>
-            <div class="weekly-kpi" style="display:flex;flex-wrap:wrap;gap:12px;">
-                <div class="kpi-card" style="flex:1 1 180px;min-width:160px;border:1px solid #ddd;padding:10px;border-radius:6px;">
+            <div class="kpi-grid">
+                <div class="kpi-card">
                     <div>平均 TST</div>
                     <strong id="weeklyAvgTST">-</strong>
                 </div>
-                <div class="kpi-card" style="flex:1 1 180px;min-width:160px;border:1px solid #ddd;padding:10px;border-radius:6px;">
+                <div class="kpi-card">
                     <div>平均 SE</div>
                     <strong id="weeklyAvgSE">-</strong>
                 </div>
-                <div class="kpi-card" style="flex:1 1 180px;min-width:160px;border:1px solid #ddd;padding:10px;border-radius:6px;">
+                <div class="kpi-card">
                     <div>平均入睡时间</div>
                     <strong id="weeklyAvgSleepStart">-</strong>
                 </div>
-                <div class="kpi-card" style="flex:1 1 180px;min-width:160px;border:1px solid #ddd;padding:10px;border-radius:6px;">
+                <div class="kpi-card">
                     <div>平均起床时间</div>
                     <strong id="weeklyAvgWake">-</strong>
                 </div>
-                <div class="kpi-card" style="flex:1 1 180px;min-width:160px;border:1px solid #ddd;padding:10px;border-radius:6px;">
+                <div class="kpi-card">
                     <div>平均主观评分</div>
                     <strong id="weeklyAvgQuality">-</strong>
                 </div>
+                <div class="kpi-card kpi-card--full">
+                    <div>量表结果</div>
+                    <p id="weeklyQuestionnaireSummary" class="weekly-questionnaire-value">-</p>
+                </div>
             </div>
-            <div style="display:flex;justify-content:space-between;align-items:center;margin-top:10px;">
-                <div>
+            <div class="weekly-controls">
+                <div class="weekly-control-buttons">
                     <button id="prevWeekBtn">上一周</button>
                     <button id="nextWeekBtn">下一周</button>
                 </div>
                 <div id="weeklyRangeLabel"></div>
             </div>
-            <div id="weeklyChartContainer" style="position: relative; height:35vh; width:100%; max-width: 1000px; margin: 12px auto;">
+            <div id="weeklyChartContainer">
                 <canvas id="weeklyChartCanvas"></canvas>
-                <p id="weeklyNoDataMessage" style="text-align: center; display: none; padding-top: 12px;">本周暂无数据。</p>
+                <p id="weeklyNoDataMessage">本周暂无数据</p>
             </div>
-            <div>
+            <div class="weekly-anomaly-card">
                 <h3>异常</h3>
                 <ul id="weeklyAnomaliesList"></ul>
             </div>
-            <div id="weeklyQuestionnaireSummary" style="margin-top:10px;"></div>
         </section>
 
         <!-- 1. 数据可视化区域 - 移到最上方 -->
@@ -235,22 +237,25 @@
                 <p style="flex: 0 0 50%; min-width: 250px; box-sizing: border-box; padding-right: 10px;"></p><!-- 空占位元素，保持最后一行对齐 -->
             </div>
         </section>
-
-        <section class="questionnaire-section">
+        <section class="questionnaire-section section-card">
             <h2>睡眠测评</h2>
-            <div class="questionnaire-tabs" style="margin-bottom:10px;">
-                <button id="psqiTabBtn">PSQI</button>
-                <button id="isiTabBtn">ISI</button>
-            </div>
-            <div id="questionnaireFormContainer"></div>
-            <div id="questionnaireResult" style="margin-top:8px;"></div>
-            <div class="questionnaire-actions" style="margin-top:8px;display:flex;gap:8px;">
-                <button id="saveQuestionnaireBtn">保存测评</button>
-                <button id="deleteQuestionnaireBtn">删除当前测评</button>
-            </div>
-            <div>
-                <h3>测评历史</h3>
-                <div id="questionnaireHistoryList"></div>
+            <div class="card-grid questionnaire-grid">
+                <div class="card questionnaire-card">
+                    <div class="questionnaire-tabs">
+                        <button id="psqiTabBtn">PSQI</button>
+                        <button id="isiTabBtn">ISI</button>
+                    </div>
+                    <div id="questionnaireFormContainer"></div>
+                    <div id="questionnaireResult" class="questionnaire-result"></div>
+                    <div class="questionnaire-actions">
+                        <button id="saveQuestionnaireBtn">保存测评</button>
+                        <button id="deleteQuestionnaireBtn">删除当前测评</button>
+                    </div>
+                </div>
+                <div class="card questionnaire-card">
+                    <h3>测评历史</h3>
+                    <div id="questionnaireHistoryList"></div>
+                </div>
             </div>
         </section>
         <!-- 4. 历史日记区 -->

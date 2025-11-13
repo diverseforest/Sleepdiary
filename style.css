@@ -293,7 +293,8 @@ footer p {
 .visualization-section,
 .input-section,
 .metrics-section,
-.history-section {
+.history-section,
+.section-card {
     width: 100%;                  /* 宽度占满容器 */
     background-color: #fff;       /* 白色背景 */
     border-radius: 8px;           /* 圆角边框 */
@@ -316,9 +317,155 @@ footer p {
     .visualization-section,
     .input-section,
     .metrics-section,
-    .history-section {
+    .history-section,
+    .section-card {
         padding: 15px;            /* 小屏幕时减小内边距 */
     }
+}
+
+
+.kpi-grid {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+}
+
+.kpi-card {
+    flex: 1 1 180px;
+    min-width: 160px;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    padding: 12px;
+    background: #fff;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.kpi-card--full {
+    flex-basis: 100%;
+}
+
+.weekly-questionnaire-value {
+    margin: 0;
+    font-size: 0.95rem;
+    color: #4a5568;
+}
+
+.weekly-controls {
+    margin-top: 12px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+
+.weekly-control-buttons button {
+    margin-right: 8px;
+}
+
+#weeklyChartContainer {
+    position: relative;
+    height: 35vh;
+    min-height: 260px;
+    width: 100%;
+    max-width: 1000px;
+    margin: 16px auto;
+}
+
+#weeklyChartContainer canvas {
+    width: 100% !important;
+    height: 100% !important;
+}
+
+#weeklyNoDataMessage {
+    text-align: center;
+    display: none;
+    padding-top: 12px;
+    color: #718096;
+}
+
+.weekly-anomaly-card {
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    padding: 12px;
+    background: #f8fafc;
+}
+
+.card-grid {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 16px;
+}
+
+.card-grid .card {
+    flex: 1 1 340px;
+    background: #fff;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    padding: 16px;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.05);
+}
+
+.questionnaire-card {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.questionnaire-tabs {
+    display: inline-flex;
+    gap: 8px;
+}
+
+.questionnaire-tabs button {
+    flex: 1;
+    padding: 8px 12px;
+    border: 1px solid #cbd5e0;
+    border-radius: 4px;
+    background: #edf2f7;
+    cursor: pointer;
+}
+
+.questionnaire-tabs button:hover {
+    background: #e2e8f0;
+}
+
+.questionnaire-result {
+    min-height: 24px;
+    color: #2d3748;
+}
+
+.questionnaire-actions {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+.questionnaire-actions button {
+    flex: 1 1 180px;
+}
+
+.qn-history-item {
+    border-bottom: 1px solid #edf2f7;
+    padding: 10px 0;
+}
+
+.qn-history-item.active {
+    background: #f7fafc;
+    border-radius: 4px;
+    padding: 12px;
+}
+
+.qn-history-actions {
+    margin-top: 6px;
+    display: flex;
+    gap: 8px;
+}
+
+.qn-history-actions button {
+    flex: 1;
 }
 
 
@@ -397,4 +544,16 @@ footer p {
 
 #loadMoreHistoryBtn:hover {
     background-color: #E2E8F0;
+}
+
+@media (max-width: 640px) {
+    .kpi-card {
+        flex: 1 1 100%;
+    }
+    .card-grid .card {
+        flex: 1 1 100%;
+    }
+    .questionnaire-actions button {
+        flex: 1 1 100%;
+    }
 }
