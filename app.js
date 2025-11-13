@@ -164,62 +164,75 @@ const WeeklyRenderer = {
     },
 
     /**
-     * 检测异常数据
-     * @param {Array} diaryEntries
-     * @returns {Array} 异常记录数组
+     * 汇总指定周范围的数据
+     * @param {Object} diaryMap
+     * @param {{start: Date}} range
+     * @returns {Object}
      */
-    detectAnomalies: function(diaryEntries) {
-        const anomalies = [];
-        diaryEntries.forEach(entry => {
-            if (entry.metrics && entry.metrics.SE < 85) {
-                anomalies.push({
-                    date: entry.date,
-                    message: `睡眠效率偏低 (${entry.metrics.SE.toFixed(1)}%)`
-                });
-            }
-        });
-        return anomalies;
-    },
-
-    /**
-     * 渲染周报图表的数据准备
-     * @param {Object} diaryMap - 日记数据对象
-     * @param {number} offset - 周偏移
-     * @returns {Object} 图表配置数据
-     */
-    prepareWeeklyChartData: function(diaryMap, offset) {
-        const range = this.getWeekRange(offset);
-        const labels = [];
-        const tstHours = [];
-        const sePercents = [];
-
-        const color = (v, good) => v !== null ? (v >= good ? '#22c55e' : '#ef4444') : '#e5e7eb';
+    summarizeRange: function(diaryMap, range) {
+        const stats = {
+            daysWithEntries: 0,
+            sumTstMin: 0,
+            cntTst: 0,
+            sumSe: 0,
+            cntSe: 0,
+            sumSleepStartMin: 0,
+            cntSleepStart: 0,
+            sumWakeMin: 0,
+            cntWake: 0,
+            sumQuality: 0,
+            cntQuality: 0
+        };
 
         for (let i = 0; i < 7; i++) {
             const d = new Date(range.start);
             d.setDate(range.start.getDate() + i);
-            labels.push(d.toLocaleDateString('zh-CN', { month: 'short', day: 'numeric' }));
-
             const key = formatDateKey(d);
             const entry = diaryMap[key];
+            if (!entry) continue;
 
-            if (entry && entry.metrics) {
-                const tst = typeof entry.metrics.TST === 'number' ? entry.metrics.TST : null;
-                const se = typeof entry.metrics.SE === 'number' ? entry.metrics.SE : null;
-                tstHours.push(tst);
-                sePercents.push(se);
-            } else {
-                tstHours.push(null);
-                sePercents.push(null);
+            stats.daysWithEntries += 1;
+            const normalized = entry.normalized ? entry.normalized : normalizeEntry(entry);
+            const metrics = calculateMetrics(normalized);
+
+            if (typeof metrics.tstMinutes === 'number') {
+                stats.sumTstMin += metrics.tstMinutes;
+                stats.cntTst += 1;
+            }
+            if (typeof metrics.sePercent === 'number') {
+                stats.sumSe += metrics.sePercent;
+                stats.cntSe += 1;
+            }
+            if (metrics.sleepStartTime) {
+                const [hh, mm] = metrics.sleepStartTime.split(':').map(Number);
+                if (!Number.isNaN(hh) && !Number.isNaN(mm)) {
+                    stats.sumSleepStartMin += hh * 60 + mm;
+                    stats.cntSleepStart += 1;
+                }
+            }
+            if (normalized.wakeTime) {
+                const wakeMins = parseTimeToMinutes(normalized.wakeTime);
+                if (wakeMins !== null) {
+                    stats.sumWakeMin += wakeMins;
+                    stats.cntWake += 1;
+                }
+            }
+            if (normalized.sleepQuality) {
+                const quality = parseInt(normalized.sleepQuality, 10);
+                if (!Number.isNaN(quality)) {
+                    stats.sumQuality += quality;
+                    stats.cntQuality += 1;
+                }
             }
         }
 
         return {
-            labels,
-            tstHours,
-            sePercents,
-            rangeStart: range.startStr,
-            rangeEnd: range.endStr
+            daysWithEntries: stats.daysWithEntries,
+            avgTstMin: stats.cntTst ? stats.sumTstMin / stats.cntTst : null,
+            avgSe: stats.cntSe ? stats.sumSe / stats.cntSe : null,
+            avgSleepStartMin: stats.cntSleepStart ? stats.sumSleepStartMin / stats.cntSleepStart : null,
+            avgWakeMin: stats.cntWake ? stats.sumWakeMin / stats.cntWake : null,
+            avgQuality: stats.cntQuality ? stats.sumQuality / stats.cntQuality : null
         };
     }
 };
@@ -1620,7 +1633,6 @@ document.addEventListener('DOMContentLoaded', () => {
 }); // DOMContentLoaded 结束
 
 let sleepChartInstance = null; // 用于存储Chart.js图表实例
-let weeklyChartInstance = null;
 let currentWeekOffset = 0;
 const PSQI_FREQ_OPTIONS = [
     { label: '0 - 无', value: 0 },
@@ -1997,54 +2009,24 @@ function getWeekRange(offset) {
 
 function renderWeeklySummary() {
     const map = diaryStore.getMap();
-    const range = WeeklyRenderer.getWeekRange(currentWeekOffset);
-    const chartData = WeeklyRenderer.prepareWeeklyChartData(map, currentWeekOffset);
-    const anomalyList = WeeklyRenderer.detectAnomalies(Object.values(map));
-    const weekAnomalies = [];
+    const range = getWeekRange(currentWeekOffset);
+    const prevRange = getWeekRange(currentWeekOffset - 1);
+    const currentStats = WeeklyRenderer.summarizeRange(map, range);
+    const prevStats = WeeklyRenderer.summarizeRange(map, prevRange);
 
-    let sumTstMin = 0, cntTst = 0, sumSe = 0, cntSe = 0, sumSleepStartMin = 0, cntSleepStart = 0, sumWakeMin = 0, cntWake = 0, sumQuality = 0, cntQuality = 0;
-
-    for (let i = 0; i < 7; i++) {
-        const d = new Date(range.start);
-        d.setDate(range.start.getDate() + i);
-        const y = d.getFullYear();
-        const m = String(d.getMonth() + 1).padStart(2, '0');
-        const day = String(d.getDate()).padStart(2, '0');
-        const key = `${y}-${m}-${day}`;
-        const e = map[key];
-
-        const tstH = chartData.tstHours[i];
-        const seP = chartData.sePercents[i];
-
-        if (typeof tstH === 'number' && tstH > 0) { sumTstMin += tstH * 60; cntTst++; }
-        if (typeof seP === 'number' && seP > 0) {
-            sumSe += seP; cntSe++;
-            if (seP < 85) weekAnomalies.push(`${key} SE ${seP}%`);
-        }
-
-        if (e) {
-            const norm2 = e.normalized ? e.normalized : normalizeEntry(e);
-            const m2 = calculateMetrics(norm2);
-            if (m2.sleepStartTime) {
-                const [hh, mm] = m2.sleepStartTime.split(':').map(Number);
-                sumSleepStartMin += hh * 60 + mm; cntSleepStart++;
-            }
-            if (norm2.wakeTime) {
-                const wm = parseTimeToMinutes(norm2.wakeTime);
-                if (wm !== null) { sumWakeMin += wm; cntWake++; }
-            }
-            if (norm2.sleepQuality) {
-                const q = parseInt(norm2.sleepQuality, 10);
-                if (!Number.isNaN(q)) { sumQuality += q; cntQuality++; }
-            }
-        }
-    }
-
-    const avgTstText = cntTst ? `${Math.floor((sumTstMin / cntTst) / 60)}小时 ${Math.round((sumTstMin / cntTst) % 60)}分钟` : '-';
-    const avgSeText = cntSe ? `${(sumSe / cntSe).toFixed(1)} %` : '-';
-    const avgSleepStartText = cntSleepStart ? (() => { const avg = Math.round(sumSleepStartMin / cntSleepStart); const h = String(Math.floor(avg / 60)).padStart(2, '0'); const m = String(avg % 60).padStart(2, '0'); return `${h}:${m}`; })() : '-';
-    const avgWakeText = cntWake ? (() => { const avg = Math.round(sumWakeMin / cntWake); const h = String(Math.floor(avg / 60)).padStart(2, '0'); const m = String(avg % 60).padStart(2, '0'); return `${h}:${m}`; })() : '-';
-    const avgQualityText = cntQuality ? (sumQuality / cntQuality).toFixed(1) : '-';
+    const formatDuration = (minutes) => {
+        if (minutes === null || minutes === undefined) return '-';
+        const hrs = Math.floor(minutes / 60);
+        const mins = Math.round(minutes % 60);
+        return `${hrs}小时 ${mins}分钟`;
+    };
+    const formatClock = (minutes) => {
+        if (minutes === null || minutes === undefined) return '-';
+        const h = String(Math.floor(minutes / 60)).padStart(2, '0');
+        const m = String(Math.round(minutes % 60)).padStart(2, '0');
+        return `${h}:${m}`;
+    };
+    const formatAverageQuality = (val) => (val !== null && val !== undefined ? val.toFixed(1) : '-');
 
     const elTst = document.getElementById('weeklyAvgTST');
     const elSe = document.getElementById('weeklyAvgSE');
@@ -2052,64 +2034,83 @@ function renderWeeklySummary() {
     const elWk = document.getElementById('weeklyAvgWake');
     const elQl = document.getElementById('weeklyAvgQuality');
     const elRange = document.getElementById('weeklyRangeLabel');
-    const elNo = document.getElementById('weeklyNoDataMessage');
-    const elCanvas = document.getElementById('weeklyChartCanvas');
-    const elAn = document.getElementById('weeklyAnomaliesList');
 
-    if (elTst) elTst.textContent = avgTstText;
-    if (elSe) elSe.textContent = avgSeText;
-    if (elSs) elSs.textContent = avgSleepStartText;
-    if (elWk) elWk.textContent = avgWakeText;
-    if (elQl) elQl.textContent = avgQualityText;
+    if (elTst) elTst.textContent = formatDuration(currentStats.avgTstMin);
+    if (elSe) elSe.textContent = currentStats.avgSe !== null ? `${currentStats.avgSe.toFixed(1)} %` : '-';
+    if (elSs) elSs.textContent = formatClock(currentStats.avgSleepStartMin);
+    if (elWk) elWk.textContent = formatClock(currentStats.avgWakeMin);
+    if (elQl) elQl.textContent = formatAverageQuality(currentStats.avgQuality);
     if (elRange) elRange.textContent = `${range.startStr} ~ ${range.endStr}`;
 
-    if (elAn) {
-        elAn.innerHTML = '';
-        if (weekAnomalies.length === 0) {
-            const li = document.createElement('li');
-            li.textContent = '无异常';
-            elAn.appendChild(li);
+    const deltaHours = (currentStats.avgTstMin !== null && prevStats.avgTstMin !== null)
+        ? (currentStats.avgTstMin - prevStats.avgTstMin) / 60
+        : null;
+    const deltaSe = (currentStats.avgSe !== null && prevStats.avgSe !== null)
+        ? (currentStats.avgSe - prevStats.avgSe)
+        : null;
+
+    const summarizeDelta = (delta, unit) => {
+        if (delta === null) return '';
+        const threshold = unit === 'h' ? 0.05 : 0.1;
+        if (Math.abs(delta) < threshold) return '（持平）';
+        const arrow = delta > 0 ? '（↑' : '（↓';
+        const formatted = Math.abs(delta).toFixed(unit === 'h' ? 1 : 1);
+        return `${arrow}${formatted}${unit}）`;
+    };
+    const chipDelta = (delta, unit) => {
+        if (delta === null) return '';
+        const threshold = unit === 'h' ? 0.05 : 0.1;
+        if (Math.abs(delta) < threshold) return ' 持平';
+        const arrow = delta > 0 ? '↑' : '↓';
+        const formatted = Math.abs(delta).toFixed(unit === 'h' ? 1 : 1);
+        return ` ${arrow}${formatted}${unit}`;
+    };
+
+    const trendSummaryEl = document.getElementById('weeklyTrendSummary');
+    if (trendSummaryEl) {
+        if (!currentStats.daysWithEntries) {
+            trendSummaryEl.textContent = '本周暂无数据。';
         } else {
-            weekAnomalies.forEach(a => { const li = document.createElement('li'); li.textContent = a; elAn.appendChild(li); });
+            const parts = [];
+            if (currentStats.avgTstMin !== null) {
+                const hours = (currentStats.avgTstMin / 60).toFixed(1);
+                parts.push(`TST ${hours} 小时${summarizeDelta(deltaHours, 'h')}`);
+            }
+            if (currentStats.avgSe !== null) {
+                parts.push(`SE ${currentStats.avgSe.toFixed(1)}%${summarizeDelta(deltaSe, '%')}`);
+            }
+            const prefix = `本周记录 ${currentStats.daysWithEntries} 天`;
+            trendSummaryEl.textContent = parts.length ? `${prefix}，${parts.join('，')}。` : `${prefix}。`;
         }
     }
 
-    if (!elCanvas) return;
-    const hasData = chartData.tstHours.some(v => v !== null && v !== undefined) || chartData.sePercents.some(v => v !== null && v !== undefined);
-    if (!hasData) { if (elNo) elNo.style.display = 'block'; } else { if (elNo) elNo.style.display = 'none'; }
-
-    if (weeklyChartInstance) { weeklyChartInstance.destroy(); weeklyChartInstance = null; }
-    const ctx = elCanvas.getContext('2d');
-    weeklyChartInstance = new Chart(ctx, {
-        type: 'bar',
-        data: {
-            labels: chartData.labels,
-            datasets: [
-                { label: 'TST(小时)', data: chartData.tstHours, backgroundColor: 'rgba(54,162,235,0.5)', borderColor: 'rgba(54,162,235,1)', yAxisID: 'y-tst' },
-                { label: 'SE(%)', data: chartData.sePercents, type: 'line', borderColor: 'rgba(255,99,132,1)', backgroundColor: 'rgba(255,99,132,0.2)', tension: 0.1, yAxisID: 'y-se' }
-            ]
-        },
-        options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            plugins: {
-                legend: { position: 'top' }
-            },
-            scales: {
-                'y-tst': { position: 'left', title: { display: true, text: '小时' } },
-                'y-se': { position: 'right', title: { display: true, text: '百分比' }, suggestedMin: 0, suggestedMax: 100 }
-            }
+    const tstTag = document.getElementById('weeklyTrendTSTTag');
+    if (tstTag) {
+        if (currentStats.avgTstMin === null) {
+            tstTag.textContent = 'TST: -';
+        } else {
+            const hours = (currentStats.avgTstMin / 60).toFixed(1);
+            tstTag.textContent = `TST: ${hours}h${chipDelta(deltaHours, 'h')}`;
         }
-    });
+    }
+
+    const seTag = document.getElementById('weeklyTrendSETag');
+    if (seTag) {
+        if (currentStats.avgSe === null) {
+            seTag.textContent = 'SE: -';
+        } else {
+            seTag.textContent = `SE: ${currentStats.avgSe.toFixed(1)}%${chipDelta(deltaSe, '%')}`;
+        }
+    }
 
     const label = document.getElementById('weeklyQuestionnaireSummary');
     if (label) {
         const latestPsqi = questionnaireStore.latestWithinRange('psqi', range.start, range.end);
         const latestIsi = questionnaireStore.latestWithinRange('isi', range.start, range.end);
         const parts = [];
-        if (latestPsqi) parts.push(`本周 PSQI：${latestPsqi.score ?? '-'}（${latestPsqi.severity || '-'}）`);
-        if (latestIsi) parts.push(`本周 ISI：${latestIsi.score ?? '-'}（${latestIsi.severity || '-'}）`);
-        label.textContent = parts.length ? parts.join(' ｜ ') : '本周暂无量表数据';
+        if (latestPsqi) parts.push(`最近 PSQI：${latestPsqi.score ?? '-'}${latestPsqi.severity ? `（${latestPsqi.severity}）` : ''}`);
+        if (latestIsi) parts.push(`最近 ISI：${latestIsi.score ?? '-'}${latestIsi.severity ? `（${latestIsi.severity}）` : ''}`);
+        label.textContent = parts.length ? parts.join(' ｜ ') : '本周暂无量表记录。';
     }
 }
 
