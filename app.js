@@ -332,6 +332,14 @@ document.addEventListener('DOMContentLoaded', () => {
         const nextW = document.getElementById('nextWeekBtn');
         if (prevW) prevW.addEventListener('click', () => { currentWeekOffset -= 1; renderWeeklySummary(); });
         if (nextW) nextW.addEventListener('click', () => { currentWeekOffset = Math.min(currentWeekOffset + 1, 0); renderWeeklySummary(); });
+        const psqiBtn=document.getElementById('psqiTabBtn');
+        const isiBtn=document.getElementById('isiTabBtn');
+        if(psqiBtn) psqiBtn.addEventListener('click',()=>renderQuestionnaireForm('psqi'));
+        if(isiBtn) isiBtn.addEventListener('click',()=>renderQuestionnaireForm('isi'));
+        const saveQ=document.getElementById('saveQuestionnaireBtn');
+        const delQ=document.getElementById('deleteQuestionnaireBtn');
+        if(saveQ) saveQ.addEventListener('click', saveCurrentQuestionnaire);
+        if(delQ) delQ.addEventListener('click', deleteCurrentQuestionnaire);
 
 
         // 8. 加载当天的日记（如果存在）
@@ -825,6 +833,7 @@ document.addEventListener('DOMContentLoaded', () => {
             avgTSTMinutes: cntTst ? Math.round(sumTstMin/cntTst) : null,
             avgSEPercent: cntSe ? parseFloat((sumSe/cntSe).toFixed(1)) : null
         };
+        payload.questionnaires = questionnaireValues();
         const jsonData = JSON.stringify(payload, null, 2);
         const blob = new Blob([jsonData], { type: 'application/json' });
         const url = URL.createObjectURL(blob);
@@ -875,6 +884,11 @@ document.addEventListener('DOMContentLoaded', () => {
                             saveDiaryToLocalStorage(dateKey, importedData[dateKey]);
                         }
                     }
+                }
+                if (Array.isArray(importedData.questionnaires)) {
+                    importedData.questionnaires.forEach(e => {
+                        if (e && e.date && e.questionnaireId) questionnaireSet(e.date, e.questionnaireId, e);
+                    });
                 }
                 alert(`数据导入完成！\n新增记录: ${importCount}条\n覆盖记录: ${overwriteCount}条`);
                 renderHistoryList();
@@ -964,6 +978,12 @@ document.addEventListener('DOMContentLoaded', () => {
 let sleepChartInstance = null; // 用于存储Chart.js图表实例
 let weeklyChartInstance = null;
 let currentWeekOffset = 0;
+const QUESTIONNAIRE_STORAGE_KEY = 'sleepQuestionnaires';
+const questionnaires = { psqi: { id:'psqi', title:'PSQI', questions:[ { key:'sleep_quality', text:'主观睡眠质量', type:'select', options:[ {label:'非常好',value:0},{label:'较好',value:1},{label:'一般',value:2},{label:'较差',value:3} ] }, { key:'sleep_latency_minutes', text:'入睡耗时(分钟)', type:'number' }, { key:'sleep_latency_freq', text:'过去一月入睡困难频率', type:'select', options:[ {label:'无',value:0},{label:'每周<1次',value:1},{label:'每周1-2次',value:2},{label:'每周≥3次',value:3} ] }, { key:'sleep_duration_hours', text:'睡眠时长(小时)', type:'number' }, { key:'bedtime', text:'惯常上床时间', type:'time' }, { key:'wake_time', text:'惯常起床时间', type:'time' }, { key:'disturbances_freq', text:'睡眠干扰频率综合', type:'select', options:[ {label:'无',value:0},{label:'每周<1次',value:1},{label:'每周1-2次',value:2},{label:'每周≥3次',value:3} ] }, { key:'medication_freq', text:'助眠药物使用频率', type:'select', options:[ {label:'无',value:0},{label:'每周<1次',value:1},{label:'每周1-2次',value:2},{label:'每周≥3次',value:3} ] }, { key:'daytime_awake_freq', text:'白天保持清醒困难频率', type:'select', options:[ {label:'无',value:0},{label:'每周<1次',value:1},{label:'每周1-2次',value:2},{label:'每周≥3次',value:3} ] }, { key:'daytime_enthusiasm_freq', text:'热情下降频率', type:'select', options:[ {label:'无',value:0},{label:'每周<1次',value:1},{label:'每周1-2次',value:2},{label:'每周≥3次',value:3} ] } ], scoringFn: function(ans){ function recodeLatency(mins){ if(mins==null) return null; if(mins<=15) return 0; if(mins<=30) return 1; if(mins<=60) return 2; return 3; } function recodeDuration(h){ if(h==null) return null; if(h>7) return 0; if(h>=6) return 1; if(h>=5) return 2; return 3; } const bedM=parseTimeToMinutes(ans.bedtime); const wakeM=parseTimeToMinutes(ans.wake_time); let tib=null; if(bedM!=null && wakeM!=null){ tib = wakeM>=bedM ? (wakeM-bedM) : ((24*60-bedM)+wakeM); } const durM=typeof ans.sleep_duration_hours==='number'?ans.sleep_duration_hours*60:null; let se=null; if(durM!=null && tib!=null && tib>0){ se=(durM/tib)*100; } function recodeSE(v){ if(v==null) return null; if(v>=85) return 0; if(v>=75) return 1; if(v>=65) return 2; return 3; } const c1=typeof ans.sleep_quality==='number'?ans.sleep_quality:null; const c2a=recodeLatency(typeof ans.sleep_latency_minutes==='number'?ans.sleep_latency_minutes:null); const c2b=typeof ans.sleep_latency_freq==='number'?ans.sleep_latency_freq:null; let c2=null; if(c2a!=null && c2b!=null){ const s=c2a+c2b; if(s===0) c2=0; else if(s<=2) c2=1; else if(s<=4) c2=2; else c2=3; } const c3=recodeDuration(typeof ans.sleep_duration_hours==='number'?ans.sleep_duration_hours:null); const c4=recodeSE(se); const c5=typeof ans.disturbances_freq==='number'?ans.disturbances_freq:null; const c6=typeof ans.medication_freq==='number'?ans.medication_freq:null; const dSum=(typeof ans.daytime_awake_freq==='number'?ans.daytime_awake_freq:null)+(typeof ans.daytime_enthusiasm_freq==='number'?ans.daytime_enthusiasm_freq:null); let c7=null; if(dSum!=null){ if(dSum===0) c7=0; else if(dSum<=2) c7=1; else if(dSum<=4) c7=2; else c7=3; } const comps=[c1,c2,c3,c4,c5,c6,c7]; if(comps.some(v=>v==null)) return {score:null,severity:null}; const total=comps.reduce((a,b)=>a+b,0); let sev=null; if(total<=5) sev='正常'; else if(total<=10) sev='轻度问题'; else if(total<=15) sev='中度问题'; else sev='重度问题'; return {score:total,severity:sev}; } }, isi: { id:'isi', title:'ISI', questions:[ {key:'q1',text:'入睡困难程度',type:'select',options:[{label:'无',value:0},{label:'轻微',value:1},{label:'中等',value:2},{label:'严重',value:3},{label:'非常严重',value:4}]}, {key:'q2',text:'维持睡眠困难程度',type:'select',options:[{label:'无',value:0},{label:'轻微',value:1},{label:'中等',value:2},{label:'严重',value:3},{label:'非常严重',value:4}]}, {key:'q3',text:'早醒问题程度',type:'select',options:[{label:'无',value:0},{label:'轻微',value:1},{label:'中等',value:2},{label:'严重',value:3},{label:'非常严重',value:4}]}, {key:'q4',text:'对睡眠问题的满意度',type:'select',options:[{label:'非常满意',value:0},{label:'满意',value:1},{label:'一般',value:2},{label:'不满意',value:3},{label:'非常不满意',value:4}]}, {key:'q5',text:'日间功能受损程度',type:'select',options:[{label:'无',value:0},{label:'轻微',value:1},{label:'中等',value:2},{label:'严重',value:3},{label:'非常严重',value:4}]}, {key:'q6',text:'睡眠问题可被他人察觉',type:'select',options:[{label:'不可察觉',value:0},{label:'轻微',value:1},{label:'中等',value:2},{label:'明显',value:3},{label:'非常明显',value:4}]}, {key:'q7',text:'对睡眠问题的担忧程度',type:'select',options:[{label:'不担忧',value:0},{label:'轻微',value:1},{label:'中等',value:2},{label:'严重',value:3},{label:'非常严重',value:4}]} ], scoringFn: function(ans){ const keys=['q1','q2','q3','q4','q5','q6','q7']; if(keys.some(k=>typeof ans[k]!=='number')) return {score:null,severity:null}; const total=keys.reduce((s,k)=>s+ans[k],0); let sev; if(total<=7) sev='正常'; else if(total<=14) sev='阈下失眠'; else if(total<=21) sev='中度失眠'; else sev='重度失眠'; return {score:total,severity:sev}; } } };
+function questionnaireGetMap(){ const raw=localStorage.getItem(QUESTIONNAIRE_STORAGE_KEY); if(!raw) return {}; try{ const obj=JSON.parse(raw); return typeof obj==='object'&&obj?obj:{}; }catch{ return {}; } }
+function questionnaireSet(date,id,entry){ const all=questionnaireGetMap(); all[`${date}:${id}`]=entry; localStorage.setItem(QUESTIONNAIRE_STORAGE_KEY, JSON.stringify(all)); }
+function questionnaireRemove(date,id){ const all=questionnaireGetMap(); delete all[`${date}:${id}`]; localStorage.setItem(QUESTIONNAIRE_STORAGE_KEY, JSON.stringify(all)); }
+function questionnaireValues(){ return Object.values(questionnaireGetMap()); }
 
 
 /**
@@ -1291,7 +1311,103 @@ function renderWeeklySummary() {
             'y-se': { position:'right', title:{ display:true, text:'百分比' }, suggestedMin:0, suggestedMax:100 }
         } }
     });
+    const qMap = questionnaireGetMap();
+    const label = document.getElementById('weeklyQuestionnaireSummary');
+    if(label){
+        let latestPsqi=null, latestIsi=null;
+        for(const k of Object.keys(qMap)){
+            const entry=qMap[k];
+            const d=new Date(entry.date);
+            d.setHours(0,0,0,0);
+            if(d>=range.start && d<=range.end){
+                if(entry.questionnaireId==='psqi') latestPsqi=entry;
+                if(entry.questionnaireId==='isi') latestIsi=entry;
+            }
+        }
+        const parts=[];
+        if(latestPsqi) parts.push(`本周 PSQI：${latestPsqi.score}（${latestPsqi.severity||'-'}）`);
+        if(latestIsi) parts.push(`本周 ISI：${latestIsi.score}（${latestIsi.severity||'-'}）`);
+        label.textContent = parts.length?parts.join('；'):'本周暂无量表数据';
+    }
 }
 
+let currentQuestionnaireId=null;
+function renderQuestionnaireForm(id){
+    currentQuestionnaireId=id;
+    const conf=questionnaires[id];
+    const container=document.getElementById('questionnaireFormContainer');
+    if(!container||!conf) return;
+    container.innerHTML='';
+    conf.questions.forEach(q=>{
+        const wrap=document.createElement('div');
+        wrap.className='qn-item';
+        const label=document.createElement('label');
+        label.textContent=q.text;
+        label.setAttribute('for',`qn_${q.key}`);
+        wrap.appendChild(label);
+        let input;
+        if(q.type==='select'){
+            input=document.createElement('select');
+            q.options.forEach(opt=>{ const o=document.createElement('option'); o.value=String(opt.value); o.textContent=opt.label; input.appendChild(o); });
+        } else if(q.type==='number'){
+            input=document.createElement('input'); input.type='number';
+        } else if(q.type==='time'){
+            input=document.createElement('input'); input.type='time';
+        } else {
+            input=document.createElement('input'); input.type='text';
+        }
+        input.id=`qn_${q.key}`;
+        wrap.appendChild(input);
+        container.appendChild(wrap);
+    });
+    const res=document.getElementById('questionnaireResult');
+    if(res) res.textContent='';
+    renderQuestionnaireHistory();
+}
+
+function collectQuestionnaireAnswers(){
+    const id=currentQuestionnaireId; if(!id) return null;
+    const conf=questionnaires[id]; if(!conf) return null;
+    const ans={};
+    conf.questions.forEach(q=>{
+        const el=document.getElementById(`qn_${q.key}`);
+        if(!el) return;
+        if(q.type==='select') ans[q.key]=parseInt(el.value,10);
+        else if(q.type==='number') ans[q.key]=el.value!==''?parseFloat(el.value):null;
+        else if(q.type==='time') ans[q.key]=el.value||'';
+        else ans[q.key]=el.value||'';
+    });
+    return ans;
+}
+
+function saveCurrentQuestionnaire(){
+    const id=currentQuestionnaireId; if(!id) return;
+    const ans=collectQuestionnaireAnswers(); if(!ans) return;
+    const date=document.getElementById('datePicker')?.value;
+    if(!date) return;
+    const sc=questionnaires[id].scoringFn(ans);
+    const entry={ date, questionnaireId:id, answers:ans, score:sc.score, severity:sc.severity };
+    questionnaireSet(date,id,entry);
+    const res=document.getElementById('questionnaireResult'); if(res) res.textContent=`得分：${entry.score??'-'}（${entry.severity??'-'}）`;
+    renderWeeklySummary();
+    renderQuestionnaireHistory();
+}
+
+function deleteCurrentQuestionnaire(){
+    const id=currentQuestionnaireId; if(!id) return;
+    const date=document.getElementById('datePicker')?.value; if(!date) return;
+    questionnaireRemove(date,id);
+    const res=document.getElementById('questionnaireResult'); if(res) res.textContent='';
+    renderWeeklySummary();
+    renderQuestionnaireHistory();
+}
+
+function renderQuestionnaireHistory(){
+    const list=document.getElementById('questionnaireHistoryList'); if(!list) return;
+    const map=questionnaireGetMap();
+    const arr=Object.values(map).sort((a,b)=>new Date(b.date)-new Date(a.date));
+    list.innerHTML='';
+    arr.slice(0,10).forEach(e=>{ const div=document.createElement('div'); div.textContent=`${e.date} ${e.questionnaireId.toUpperCase()} ${e.score??'-'}（${e.severity??'-'}）`; list.appendChild(div); });
+}
 // 假设这是您加载历史记录的函数
 // 移除过时的演示代码，统一在应用内部流转

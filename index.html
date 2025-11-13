@@ -68,6 +68,7 @@
                 <h3>异常</h3>
                 <ul id="weeklyAnomaliesList"></ul>
             </div>
+            <div id="weeklyQuestionnaireSummary" style="margin-top:10px;"></div>
         </section>
 
         <!-- 1. 数据可视化区域 - 移到最上方 -->
@@ -235,6 +236,23 @@
             </div>
         </section>
 
+        <section class="questionnaire-section">
+            <h2>睡眠测评</h2>
+            <div class="questionnaire-tabs" style="margin-bottom:10px;">
+                <button id="psqiTabBtn">PSQI</button>
+                <button id="isiTabBtn">ISI</button>
+            </div>
+            <div id="questionnaireFormContainer"></div>
+            <div id="questionnaireResult" style="margin-top:8px;"></div>
+            <div class="questionnaire-actions" style="margin-top:8px;display:flex;gap:8px;">
+                <button id="saveQuestionnaireBtn">保存测评</button>
+                <button id="deleteQuestionnaireBtn">删除当前测评</button>
+            </div>
+            <div>
+                <h3>测评历史</h3>
+                <div id="questionnaireHistoryList"></div>
+            </div>
+        </section>
         <!-- 4. 历史日记区 -->
         <section class="history-section">
             <h2>历史日记</h2>
