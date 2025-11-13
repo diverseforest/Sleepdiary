@@ -4,6 +4,286 @@ const LEGACY_ARRAY_KEY = 'sleepDiaries';
 const QUESTIONNAIRE_STORAGE_KEY = 'sleepQuestionnaires';
 const QUESTIONNAIRE_DATA_VERSION = 2;
 
+// ============================================================================
+// 核心服务层 - 为未来云同步预留接口
+// ============================================================================
+
+const syncService = {
+    /**
+     * 同步服务占位符 - 当前为 no-op
+     * 未来接入云存储或登录体系时只需实现以下接口
+     */
+
+    isOnline: function() {
+        // 检查网络连接状态
+        // 小程序实现: 使用 wx.getNetworkType()
+        return navigator.onLine || false;
+    },
+
+    authenticate: async function(credentials) {
+        // 用户认证
+        // 小程序实现: 调用微信登录 wx.login()
+        console.log('Sync: authenticate (no-op)');
+        return { success: true, token: 'placeholder' };
+    },
+
+    syncToCloud: async function(payload) {
+        // 上传数据到云端
+        // 小程序实现: 使用 wx.cloud.callFunction()
+        console.log('Sync: syncToCloud (no-op)', payload);
+        return { success: true };
+    },
+
+    syncFromCloud: async function() {
+        // 从云端下载数据
+        // 小程序实现: 使用 wx.cloud.callFunction()
+        console.log('Sync: syncFromCloud (no-op)');
+        return { success: true, data: null };
+    },
+
+    getSyncStatus: function() {
+        // 获取同步状态
+        // 返回值: { isSynced: boolean, lastSyncTime: string }
+        return {
+            isSynced: false,
+            lastSyncTime: null
+        };
+    }
+};
+
+// ============================================================================
+// 组件层 - 模块化封装，逻辑与 DOM 分离
+// ============================================================================
+
+/**
+ * 表单处理模块
+ * 负责日记表单的加载、验证、计算和保存，不包含 DOM 操作
+ */
+const FormHandler = {
+    /**
+     * 从表单数据收集并标准化日记条目
+     * @param {Object} formData - 原始表单数据
+     * @returns {Object} 标准化后的日记条目
+     */
+    normalizeEntry: function(formData) {
+        return normalizeEntry(formData);
+    },
+
+    /**
+     * 计算睡眠指标
+     * @param {Object} entry - 日记条目
+     * @returns {Object} 计算出的睡眠指标
+     */
+    calculateMetrics: function(entry) {
+        return calculateMetrics(entry);
+    },
+
+    /**
+     * 验证表单数据的完整性
+     * @param {Object} entry
+     * @returns {Object} { isValid: boolean, errors: string[] }
+     */
+    validate: function(entry) {
+        const errors = [];
+        const requiredFields = ['date', 'bedtime', 'wakeTime', 'outOfBedTime'];
+
+        requiredFields.forEach(field => {
+            if (!entry[field]) {
+                errors.push(`缺少必需字段: ${field}`);
+            }
+        });
+
+        // 时间格式验证
+        const timeFields = ['bedtime', 'wakeTime', 'outOfBedTime'];
+        const timeRegex = /^([01]?[0-9]|2[0-3]):[0-5][0-9]$/;
+        timeFields.forEach(field => {
+            if (entry[field] && !timeRegex.test(entry[field])) {
+                errors.push(`时间格式错误: ${field} = ${entry[field]}`);
+            }
+        });
+
+        return {
+            isValid: errors.length === 0,
+            errors
+        };
+    },
+
+    /**
+     * 格式化指标显示文本
+     * @param {Object} metrics
+     * @returns {Object} 格式化后的显示对象
+     */
+    formatMetricsForDisplay: function(metrics) {
+        const format = (val, unit) => typeof val === 'number' ? `${val.toFixed(1)} ${unit}` : '-';
+
+        return {
+            tibDisplay: format(metrics.tibMinutes / 60, '小时'),
+            tstDisplay: format(metrics.tstMinutes / 60, '小时'),
+            seDisplay: format(metrics.sePercent, '%'),
+            wasoDisplay: typeof metrics.wasoMinutes === 'number' ? `${metrics.wasoMinutes} 分钟` : '-',
+            awakeInBedDisplay: typeof metrics.awakeInBedMinutes === 'number' ? `${metrics.awakeInBedMinutes} 分钟` : '-',
+            sleepStartDisplay: metrics.sleepStartTime || '-'
+        };
+    }
+};
+
+/**
+ * 周报渲染模块
+ * 负责周报数据计算、图表渲染（逻辑层，不包含DOM操作）
+ */
+const WeeklyRenderer = {
+    /**
+     * 获取周的日期范围
+     * @param {number} offset - 周偏移（0=本周，-1=上周，以此类推）
+     * @returns {{start: Date, end: Date, startStr: string, endStr: string}}
+     */
+    getWeekRange: function(offset) {
+        return getWeekRange(offset);
+    },
+
+    /**
+     * 聚合周数据
+     * @param {Array|Object} entries
+     * @returns {Object} 聚合结果
+     */
+    aggregateWeek: function(entries) {
+        const result = aggregateWeek(entries);
+        const last7Count = result.count || 0;
+
+        if (last7Count === 0) {
+            return { count: 0 };
+        }
+
+        return {
+            count: last7Count,
+            avgTST: result.avgTST,
+            avgSE: result.avgSE,
+            anomalies: result.anomalies || []
+        };
+    },
+
+    /**
+     * 检测异常数据
+     * @param {Array} diaryEntries
+     * @returns {Array} 异常记录数组
+     */
+    detectAnomalies: function(diaryEntries) {
+        const anomalies = [];
+        diaryEntries.forEach(entry => {
+            if (entry.metrics && entry.metrics.SE < 85) {
+                anomalies.push({
+                    date: entry.date,
+                    message: `睡眠效率偏低 (${entry.metrics.SE.toFixed(1)}%)`
+                });
+            }
+        });
+        return anomalies;
+    },
+
+    /**
+     * 渲染周报图表的数据准备
+     * @param {Object} diaryMap - 日记数据对象
+     * @param {number} offset - 周偏移
+     * @returns {Object} 图表配置数据
+     */
+    prepareWeeklyChartData: function(diaryMap, offset) {
+        const range = this.getWeekRange(offset);
+        const labels = [];
+        const tstHours = [];
+        const sePercents = [];
+
+        const color = (v, good) => v !== null ? (v >= good ? '#22c55e' : '#ef4444') : '#e5e7eb';
+
+        for (let i = 0; i < 7; i++) {
+            const d = new Date(range.start);
+            d.setDate(range.start.getDate() + i);
+            labels.push(d.toLocaleDateString('zh-CN', { month: 'short', day: 'numeric' }));
+
+            const key = d.toISOString().slice(0, 10);
+            const entry = diaryMap[key];
+
+            if (entry && entry.metrics) {
+                const tst = typeof entry.metrics.TST === 'number' ? entry.metrics.TST : null;
+                const se = typeof entry.metrics.SE === 'number' ? entry.metrics.SE : null;
+                tstHours.push(tst);
+                sePercents.push(se);
+            } else {
+                tstHours.push(null);
+                sePercents.push(null);
+            }
+        }
+
+        return {
+            labels,
+            tstHours,
+            sePercents,
+            rangeStart: range.startStr,
+            rangeEnd: range.endStr
+        };
+    }
+};
+
+/**
+ * 量表渲染模块
+ * 负责问卷展示、评分、历史记录管理
+ */
+const QuestionnaireRenderer = {
+    /**
+     * 获取指定问卷配置
+     * @param {string} id - 问卷ID (psqi, isi)
+     * @returns {Object} 问卷配置
+     */
+    getQuestionnaire: function(id) {
+        return questionnaires[id];
+    },
+
+    /**
+     * 计算问卷分数
+     * @param {string} id - 问卷ID
+     * @param {Object} answers - 答案对象
+     * @returns {Object} 评分结果
+     */
+    calculateScore: function(id, answers) {
+        const q = this.getQuestionnaire(id);
+        if (!q || !q.scoringFn) {
+            return { score: null, severity: null };
+        }
+        return q.scoringFn(answers);
+    },
+
+    /**
+     * 获取问卷历史记录
+     * @returns {Array} 按时间排序的问卷历史
+     */
+    getHistory: function() {
+        return questionnaireStore.getAll()
+            .sort((a, b) => new Date(b.date) - new Date(a.date));
+    },
+
+    /**
+     * 获取指定日期的问卷结果
+     * @param {string} questionnaireId
+     * @param {string} date
+     * @returns {Object|null}
+     */
+    getByDate: function(questionnaireId, date) {
+        const all = questionnaireStore.getAll();
+        return all.find(entry => entry.questionnaireId === questionnaireId && entry.date === date) || null;
+    },
+
+    /**
+     * 格式化问卷结果显示
+     * @param {Object} entry
+     * @returns {string}
+     */
+    formatResult: function(entry) {
+        if (!entry || !entry.scoring) return '-';
+        const q = this.getQuestionnaire(entry.questionnaireId);
+        const name = q ? q.name : entry.questionnaireId;
+        return `${name}: ${entry.scoring.score}分 (${entry.scoring.severity})`;
+    }
+};
+
 function generateId(prefix = 'id') {
     return `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
 }
