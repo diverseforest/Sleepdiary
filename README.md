@@ -441,6 +441,17 @@ wx.requestSubscribeMessage({
 - [微信小程序云开发文档](https://developers.weixin.qq.com/miniprogram/dev/wxcloud/basis/getting-started.html)
 - [Canvas API 参考](https://developers.weixin.qq.com/miniprogram/dev/api/canvas/CanvasContext.html)
 
+### 9. 开发规划与部署路线
+
+以下路线聚焦把当前 Web SPA 迭代成果迁入微信小程序直至可发布版本，可与 `MINIAPP_MIGRATION_CHECKLIST.md` 联动跟踪：
+
+- **阶段 0（1 天，环境与脚手架）**：安装微信开发者工具，创建含 `pages/`、`components/`、`services/`、`utils/` 的基础目录，移植 `FormHandler`、`WeeklyRenderer`、`QuestionnaireRenderer` 内的纯逻辑方法到 `utils/`，并用 `syncService` 定义的数据接口占位 `services/storageService.js` 与 `services/syncService.js`。
+- **阶段 1（3 天，录入 MVP）**：实现 `pages/index/`（日记录入）与 `components/diary-form/`，将本地 `localStorage` 操作替换为 `wx.setStorageSync`/`wx.getStorageSync`，完成表单校验、指标计算与历史列表；编写至少 5 条单元测试覆盖核心计算函数。
+- **阶段 2（3 天，统计与图表）**：落地 `pages/weekly/` 与 `components/weekly-chart/`，把 Chart.js 配置翻译为 Canvas 绘制流程，抽象 `utils/chartAdapter.js` 按 `prepareWeeklyChartData` 的数据协议输出，同时提供异常检测和周范围切换。
+- **阶段 3（2 天，量表与扩展）**：实现 `pages/questionnaire/` 与 `components/questionnaire-form/`，把 `QuestionnaireRenderer` 的题库/评分逻辑拆到 JSON + 评分函数；补齐导入导出、数据备份提示，并在 `syncService` 里接入真实云存储或保留 no-op。
+- **阶段 4（1 天，预发布与测试）**：依据 `MINIAPP_MIGRATION_CHECKLIST.md` 完成真机调试、性能分析、无障碍/分辨率适配，清理 console 调试信息，输出发布包与版本说明。
+- **持续交付要求**：每个阶段结束必须更新 README 中的兼容性说明、同步 `迭代计划`、并在小程序后台上传当前构建为体验版，供产品与测试验证。
+
 ---
 
 ## 数据格式

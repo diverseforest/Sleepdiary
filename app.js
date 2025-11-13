@@ -120,6 +120,7 @@ const FormHandler = {
             tibDisplay: format(metrics.tibMinutes / 60, '小时'),
             tstDisplay: format(metrics.tstMinutes / 60, '小时'),
             seDisplay: format(metrics.sePercent, '%'),
+            slDisplay: typeof metrics.sleepLatencyMinutes === 'number' ? `${metrics.sleepLatencyMinutes} 分钟` : '-',
             wasoDisplay: typeof metrics.wasoMinutes === 'number' ? `${metrics.wasoMinutes} 分钟` : '-',
             awakeInBedDisplay: typeof metrics.awakeInBedMinutes === 'number' ? `${metrics.awakeInBedMinutes} 分钟` : '-',
             sleepStartDisplay: metrics.sleepStartTime || '-'
@@ -156,8 +157,8 @@ const WeeklyRenderer = {
 
         return {
             count: last7Count,
-            avgTST: result.avgTST,
-            avgSE: result.avgSE,
+            avgTST: result.avgTSTMinutes,
+            avgSE: result.avgSEPercent,
             anomalies: result.anomalies || []
         };
     },
@@ -199,7 +200,7 @@ const WeeklyRenderer = {
             d.setDate(range.start.getDate() + i);
             labels.push(d.toLocaleDateString('zh-CN', { month: 'short', day: 'numeric' }));
 
-            const key = d.toISOString().slice(0, 10);
+            const key = formatDateKey(d);
             const entry = diaryMap[key];
 
             if (entry && entry.metrics) {
@@ -277,10 +278,15 @@ const QuestionnaireRenderer = {
      * @returns {string}
      */
     formatResult: function(entry) {
-        if (!entry || !entry.scoring) return '-';
+        if (!entry) return '-';
         const q = this.getQuestionnaire(entry.questionnaireId);
-        const name = q ? q.name : entry.questionnaireId;
-        return `${name}: ${entry.scoring.score}分 (${entry.scoring.severity})`;
+        const name = q ? q.title : (entry.questionnaireId || '问卷');
+        const score = entry.scoring?.score ?? entry.score;
+        const severity = entry.scoring?.severity ?? entry.severity;
+        const date = entry.date || ((entry.updatedAt || '').split('T')[0]) || '-';
+        const scoreText = score != null ? `${score}分` : '-';
+        const severityText = severity ? `（${severity}）` : '';
+        return `${date} · ${name}: ${scoreText}${severityText}`;
     }
 };
 
@@ -302,6 +308,13 @@ function addMinutes(timeStr, minutes) {
     const h = String(Math.floor(total / 60)).padStart(2, '0');
     const m = String(total % 60).padStart(2, '0');
     return `${h}:${m}`;
+}
+
+function formatDateKey(dateObj) {
+    const y = dateObj.getFullYear();
+    const m = String(dateObj.getMonth() + 1).padStart(2, '0');
+    const d = String(dateObj.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
 }
 
 function normalizeEntry(raw) {
@@ -350,15 +363,16 @@ function calculateMetrics(entry) {
     if (wakeM !== null && outM !== null) {
         awakeInBed = outM >= wakeM ? (outM - wakeM) : ((24 * 60 - wakeM) + outM);
     }
-    return {
-        tibMinutes: tib,
-        tstMinutes: tst,
-        wasoMinutes: waso,
-        sePercent: se,
-        awakeInBedMinutes: awakeInBed,
-        sleepStartTime: sleepStartM !== null ? `${String(Math.floor(sleepStartM / 60)).padStart(2, '0')}:${String(sleepStartM % 60).padStart(2, '0')}` : null
-    };
-}
+        return {
+            tibMinutes: tib,
+            tstMinutes: tst,
+            wasoMinutes: waso,
+            sePercent: se,
+            awakeInBedMinutes: awakeInBed,
+            sleepStartTime: sleepStartM !== null ? `${String(Math.floor(sleepStartM / 60)).padStart(2, '0')}:${String(sleepStartM % 60).padStart(2, '0')}` : null,
+            sleepLatencyMinutes: sl
+        };
+    }
 
 function aggregateWeek(entries) {
     const arr = Array.isArray(entries) ? entries : Object.values(entries || {});
@@ -764,6 +778,10 @@ document.addEventListener('DOMContentLoaded', () => {
         }, 100);
 
         renderWeeklySummary();
+
+        // 添加：渲染量表历史
+        renderQuestionnaireHistory();
+
         console.log('睡眠日记应用已初始化完毕！');
     }
 
@@ -1033,19 +1051,19 @@ document.addEventListener('DOMContentLoaded', () => {
         calculateAndDisplayMetrics();
     }
 
-    // 保存当前日记 (到 localStorage)
+    // 保存当前日记 (到 localStorage) - 使用 FormHandler 重构
     function saveDiary() {
         const date = datePicker.value;
         if (!date) {
             alert('请先选择一个日期！');
             return;
         }
-    
+
         // 在保存前确保最新的指标已计算并存入lastCalculated...变量
-        calculateAndDisplayMetrics(); // 确保在保存前，所有指标都是基于当前表单的最新值计算的
-    
-        // 收集表单数据
-        const diaryEntry = {
+        calculateAndDisplayMetrics();
+
+        // 1. 收集原始表单数据
+        const rawFormData = {
             date: date,
             bedTime: bedTimeInput.value,
             sleepLatency: sleepLatencyInput.value,
@@ -1053,41 +1071,76 @@ document.addEventListener('DOMContentLoaded', () => {
             awakeningsDuration: awakeningsDurationInput.value,
             wakeUpTime: wakeUpTimeInput.value,
             outOfBedTime: outOfBedTimeInput.value,
-            factors: {},
             sleepQuality: sleepQualitySelect.value,
             daytimeAlertness: daytimeAlertnessSelect.value,
             notes: notesTextarea.value,
-            // 存储指标
-            metrics: { // 存储指标
-                // 保留文本格式的指标用于可能的直接显示
-                tib: metricTIBDisplay.textContent,
-                sl: metricSLDisplay.textContent,
-                actualSleepTime: metricActualSleepTimeDisplay.textContent,
-                waso: metricWASODisplay.textContent,
-                tst_display: metricTSTDisplay.textContent, // 文本版TST
-                se_display: metricSEDisplay.textContent,   // 文本版SE
-                timeAwakeInBed: metricTimeAwakeInBedDisplayOutput.textContent,
-
-                // 新增：存储数值格式的指标用于图表
-                TST: lastCalculatedTSTHours,          // 数值型睡眠总时长 (小时)
-                SE: lastCalculatedSEPercentage      // 数值型睡眠效率 (%)
-            }
+            factors: {}
         };
 
+        // 收集影响因素
         for (const factor in factorCheckboxes) {
             if (factorCheckboxes[factor].checked) {
-                diaryEntry.factors[factor] = {
+                rawFormData.factors[factor] = {
                     checked: true,
                     detail: factorDetailInputs[factor].value
                 };
             }
         }
 
+        // 2. 使用 FormHandler 标准化数据
+        const normalizedEntry = FormHandler.normalizeEntry(rawFormData);
+
+        // 3. 使用 FormHandler 验证数据
+        const validation = FormHandler.validate(normalizedEntry);
+        if (!validation.isValid) {
+            alert(`数据验证失败，请检查以下问题：\n\n${validation.errors.join('\n')}`);
+            return;
+        }
+
+        // 4. 使用 FormHandler 计算指标
+        const metrics = FormHandler.calculateMetrics(normalizedEntry);
+        const formattedMetrics = FormHandler.formatMetricsForDisplay(metrics);
+
+        // 5. 构建完整日记条目
+        const diaryEntry = {
+            // 保留原始表单数据字段（大驼峰），供 saveDiaryToLocalStorage 重新标准化
+            date: rawFormData.date,
+            bedTime: rawFormData.bedTime,
+            sleepLatency: rawFormData.sleepLatency,
+            awakeningsCount: rawFormData.awakeningsCount,
+            awakeningsDuration: rawFormData.awakeningsDuration,
+            wakeUpTime: rawFormData.wakeUpTime,
+            outOfBedTime: rawFormData.outOfBedTime,
+            sleepQuality: rawFormData.sleepQuality,
+            daytimeAlertness: rawFormData.daytimeAlertness,
+            notes: rawFormData.notes,
+            factors: rawFormData.factors,
+            // 同时保存标准化数据供逻辑层使用
+            normalized: normalizedEntry,
+            // 存储指标（文本格式用于直接显示）
+            metrics: {
+                tib: formattedMetrics.tibDisplay,
+                sl: formattedMetrics.slDisplay,  // 修复：从 seDisplay 改为 slDisplay
+                actualSleepTime: metricActualSleepTimeDisplay.textContent,
+                waso: formattedMetrics.wasoDisplay,
+                tst_display: metricTSTDisplay.textContent,
+                se_display: metricSEDisplay.textContent,
+                timeAwakeInBed: metricTimeAwakeInBedDisplayOutput.textContent,
+                // 数值格式用于图表和计算
+                TST: lastCalculatedTSTHours,
+                SE: lastCalculatedSEPercentage
+            }
+        };
+
         console.log(`准备保存日期 ${date} 的日记:`, diaryEntry);
+
+        // 6. 保存到存储
         saveDiaryToLocalStorage(date, diaryEntry);
+
         alert('日记已保存！');
-        renderHistoryList(); // 保存后刷新历史列表
-        // 新增：保存后更新图表
+
+        // 7. 刷新界面
+        renderHistoryList();
         const allDiaries = getAllDiariesFromLocalStorage();
         renderSleepChart(allDiaries);
         renderWeeklySummary();
@@ -1114,6 +1167,7 @@ document.addEventListener('DOMContentLoaded', () => {
             // 新增：删除后更新图表
             const allDiaries = getAllDiariesFromLocalStorage();
             renderSleepChart(allDiaries);
+            renderWeeklySummary();
         }
     }
 
@@ -1299,7 +1353,7 @@ document.addEventListener('DOMContentLoaded', () => {
         for (let i=0;i<7;i++) {
             const d = new Date(weeklyRange.start);
             d.setDate(weeklyRange.start.getDate()+i);
-            const key = d.toISOString().slice(0,10);
+            const key = formatDateKey(d);
             const e = map[key];
             if (e && typeof e.metrics?.TST === 'number') {
                 sumTstMin += e.metrics.TST * 60;
@@ -1504,7 +1558,8 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function saveDiaryToLocalStorage(dateString, diaryEntry) {
-        const normalized = normalizeEntry({
+        // 使用已经标准化和计算好的数据，避免重复计算
+        const normalized = diaryEntry.normalized || normalizeEntry({
             date: diaryEntry.date,
             bedTime: diaryEntry.bedTime,
             sleepLatency: diaryEntry.sleepLatency,
@@ -1517,11 +1572,22 @@ document.addEventListener('DOMContentLoaded', () => {
             sleepQuality: diaryEntry.sleepQuality,
             daytimeAlertness: diaryEntry.daytimeAlertness
         });
-        const m = calculateMetrics(normalized);
-        const tstHours = typeof m.tstMinutes === 'number' ? parseFloat((m.tstMinutes / 60).toFixed(2)) : 0;
-        const sePct = typeof m.sePercent === 'number' ? parseFloat(m.sePercent.toFixed(1)) : 0;
-        const tstText = typeof m.tstMinutes === 'number' ? `${Math.floor(m.tstMinutes / 60)}小时 ${m.tstMinutes % 60}分钟` : '-';
-        const seText = typeof m.sePercent === 'number' ? `${sePct.toFixed(1)} %` : '-';
+
+        // 如果已有 metrics 且包含数值型 TST/SE，直接使用；否则重新计算
+        let tstHours, sePct, tstText, seText;
+        if (diaryEntry.metrics && typeof diaryEntry.metrics.TST === 'number' && typeof diaryEntry.metrics.SE === 'number') {
+            tstHours = diaryEntry.metrics.TST;
+            sePct = diaryEntry.metrics.SE;
+            tstText = diaryEntry.metrics.tst_display || '-';
+            seText = diaryEntry.metrics.se_display || '-';
+        } else {
+            const m = calculateMetrics(normalized);
+            tstHours = typeof m.tstMinutes === 'number' ? parseFloat((m.tstMinutes / 60).toFixed(2)) : 0;
+            sePct = typeof m.sePercent === 'number' ? parseFloat(m.sePercent.toFixed(1)) : 0;
+            tstText = typeof m.tstMinutes === 'number' ? `${Math.floor(m.tstMinutes / 60)}小时 ${m.tstMinutes % 60}分钟` : '-';
+            seText = typeof m.sePercent === 'number' ? `${sePct.toFixed(1)} %` : '-';
+        }
+
         const stored = {
             ...diaryEntry,
             normalized,
@@ -1531,8 +1597,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 SE: sePct,
                 tst_display: tstText,
                 se_display: seText,
-                waso: typeof m.wasoMinutes === 'number' ? `${m.wasoMinutes} 分钟` : diaryEntry.metrics?.waso,
-                timeAwakeInBed: typeof m.awakeInBedMinutes === 'number' ? `${m.awakeInBedMinutes} 分钟` : diaryEntry.metrics?.timeAwakeInBed
+                waso: diaryEntry.metrics?.waso || (typeof normalized.wasoMinutes === 'number' ? `${normalized.wasoMinutes} 分钟` : '-'),
+                timeAwakeInBed: diaryEntry.metrics?.timeAwakeInBed || (typeof normalized.awakeInBedMinutes === 'number' ? `${normalized.awakeInBedMinutes} 分钟` : '-')
             },
             version: DATA_VERSION
         };
@@ -1931,67 +1997,55 @@ function getWeekRange(offset) {
 
 function renderWeeklySummary() {
     const map = diaryStore.getMap();
-    const range = getWeekRange(currentWeekOffset);
-    const labels = [];
-    const tstHours = [];
-    const sePercents = [];
-    const anomalies = [];
+    const range = WeeklyRenderer.getWeekRange(currentWeekOffset);
+    const chartData = WeeklyRenderer.prepareWeeklyChartData(map, currentWeekOffset);
+    const anomalyList = WeeklyRenderer.detectAnomalies(Object.values(map));
+    const weekAnomalies = [];
+
     let sumTstMin = 0, cntTst = 0, sumSe = 0, cntSe = 0, sumSleepStartMin = 0, cntSleepStart = 0, sumWakeMin = 0, cntWake = 0, sumQuality = 0, cntQuality = 0;
-    for (let i=0;i<7;i++) {
+
+    for (let i = 0; i < 7; i++) {
         const d = new Date(range.start);
-        d.setDate(range.start.getDate()+i);
+        d.setDate(range.start.getDate() + i);
         const y = d.getFullYear();
-        const m = String(d.getMonth()+1).padStart(2,'0');
-        const day = String(d.getDate()).padStart(2,'0');
+        const m = String(d.getMonth() + 1).padStart(2, '0');
+        const day = String(d.getDate()).padStart(2, '0');
         const key = `${y}-${m}-${day}`;
-        labels.push(`${m}-${day}`);
         const e = map[key];
+
+        const tstH = chartData.tstHours[i];
+        const seP = chartData.sePercents[i];
+
+        if (typeof tstH === 'number' && tstH > 0) { sumTstMin += tstH * 60; cntTst++; }
+        if (typeof seP === 'number' && seP > 0) {
+            sumSe += seP; cntSe++;
+            if (seP < 85) weekAnomalies.push(`${key} SE ${seP}%`);
+        }
+
         if (e) {
-            let tstH = typeof e.metrics?.TST === 'number' ? e.metrics.TST : null;
-            let seP = typeof e.metrics?.SE === 'number' ? e.metrics.SE : null;
-            if (tstH === null || seP === null) {
-                const norm = e.normalized ? e.normalized : normalizeEntry({
-                    date: e.date,
-                    bedTime: e.bedTime,
-                    sleepLatency: e.sleepLatency,
-                    awakeningsCount: e.awakeningsCount,
-                    awakeningsDuration: e.awakeningsDuration,
-                    wakeUpTime: e.wakeUpTime,
-                    outOfBedTime: e.outOfBedTime,
-                    notes: e.notes,
-                    factors: e.factors,
-                    sleepQuality: e.sleepQuality,
-                    daytimeAlertness: e.daytimeAlertness
-                });
-                const mtr = calculateMetrics(norm);
-                tstH = typeof mtr.tstMinutes === 'number' ? parseFloat((mtr.tstMinutes/60).toFixed(2)) : null;
-                seP = typeof mtr.sePercent === 'number' ? parseFloat(mtr.sePercent.toFixed(1)) : null;
-            }
-            if (typeof tstH === 'number') { sumTstMin += tstH*60; cntTst++; }
-            if (typeof seP === 'number') { sumSe += seP; cntSe++; if (seP < 85) anomalies.push(`${key} SE ${seP}%`); }
-            tstHours.push(typeof tstH === 'number' ? tstH : 0);
-            sePercents.push(typeof seP === 'number' ? seP : 0);
             const norm2 = e.normalized ? e.normalized : normalizeEntry(e);
             const m2 = calculateMetrics(norm2);
             if (m2.sleepStartTime) {
-                const [hh,mm] = m2.sleepStartTime.split(':').map(Number);
-                sumSleepStartMin += hh*60+mm; cntSleepStart++;
+                const [hh, mm] = m2.sleepStartTime.split(':').map(Number);
+                sumSleepStartMin += hh * 60 + mm; cntSleepStart++;
             }
             if (norm2.wakeTime) {
                 const wm = parseTimeToMinutes(norm2.wakeTime);
                 if (wm !== null) { sumWakeMin += wm; cntWake++; }
             }
-            if (norm2.sleepQuality) { const q = parseInt(norm2.sleepQuality,10); if (!Number.isNaN(q)) { sumQuality += q; cntQuality++; } }
-        } else {
-            tstHours.push(0);
-            sePercents.push(0);
+            if (norm2.sleepQuality) {
+                const q = parseInt(norm2.sleepQuality, 10);
+                if (!Number.isNaN(q)) { sumQuality += q; cntQuality++; }
+            }
         }
     }
-    const avgTstText = cntTst ? `${Math.floor((sumTstMin/cntTst)/60)}小时 ${Math.round((sumTstMin/cntTst)%60)}分钟` : '-';
-    const avgSeText = cntSe ? `${(sumSe/cntSe).toFixed(1)} %` : '-';
-    const avgSleepStartText = cntSleepStart ? (()=>{ const avg = Math.round(sumSleepStartMin/cntSleepStart); const h = String(Math.floor(avg/60)).padStart(2,'0'); const m = String(avg%60).padStart(2,'0'); return `${h}:${m}`; })() : '-';
-    const avgWakeText = cntWake ? (()=>{ const avg = Math.round(sumWakeMin/cntWake); const h = String(Math.floor(avg/60)).padStart(2,'0'); const m = String(avg%60).padStart(2,'0'); return `${h}:${m}`; })() : '-';
-    const avgQualityText = cntQuality ? (sumQuality/cntQuality).toFixed(1) : '-';
+
+    const avgTstText = cntTst ? `${Math.floor((sumTstMin / cntTst) / 60)}小时 ${Math.round((sumTstMin / cntTst) % 60)}分钟` : '-';
+    const avgSeText = cntSe ? `${(sumSe / cntSe).toFixed(1)} %` : '-';
+    const avgSleepStartText = cntSleepStart ? (() => { const avg = Math.round(sumSleepStartMin / cntSleepStart); const h = String(Math.floor(avg / 60)).padStart(2, '0'); const m = String(avg % 60).padStart(2, '0'); return `${h}:${m}`; })() : '-';
+    const avgWakeText = cntWake ? (() => { const avg = Math.round(sumWakeMin / cntWake); const h = String(Math.floor(avg / 60)).padStart(2, '0'); const m = String(avg % 60).padStart(2, '0'); return `${h}:${m}`; })() : '-';
+    const avgQualityText = cntQuality ? (sumQuality / cntQuality).toFixed(1) : '-';
+
     const elTst = document.getElementById('weeklyAvgTST');
     const elSe = document.getElementById('weeklyAvgSE');
     const elSs = document.getElementById('weeklyAvgSleepStart');
@@ -2001,38 +2055,53 @@ function renderWeeklySummary() {
     const elNo = document.getElementById('weeklyNoDataMessage');
     const elCanvas = document.getElementById('weeklyChartCanvas');
     const elAn = document.getElementById('weeklyAnomaliesList');
+
     if (elTst) elTst.textContent = avgTstText;
     if (elSe) elSe.textContent = avgSeText;
     if (elSs) elSs.textContent = avgSleepStartText;
     if (elWk) elWk.textContent = avgWakeText;
     if (elQl) elQl.textContent = avgQualityText;
     if (elRange) elRange.textContent = `${range.startStr} ~ ${range.endStr}`;
+
     if (elAn) {
         elAn.innerHTML = '';
-        if (anomalies.length === 0) {
+        if (weekAnomalies.length === 0) {
             const li = document.createElement('li');
             li.textContent = '无异常';
             elAn.appendChild(li);
         } else {
-            anomalies.forEach(a=>{ const li=document.createElement('li'); li.textContent=a; elAn.appendChild(li); });
+            weekAnomalies.forEach(a => { const li = document.createElement('li'); li.textContent = a; elAn.appendChild(li); });
         }
     }
+
     if (!elCanvas) return;
-    const hasData = tstHours.some(v=>v>0) || sePercents.some(v=>v>0);
-    if (!hasData) { if (elNo) elNo.style.display='block'; } else { if (elNo) elNo.style.display='none'; }
-    if (weeklyChartInstance) { weeklyChartInstance.destroy(); weeklyChartInstance=null; }
+    const hasData = chartData.tstHours.some(v => v !== null && v !== undefined) || chartData.sePercents.some(v => v !== null && v !== undefined);
+    if (!hasData) { if (elNo) elNo.style.display = 'block'; } else { if (elNo) elNo.style.display = 'none'; }
+
+    if (weeklyChartInstance) { weeklyChartInstance.destroy(); weeklyChartInstance = null; }
     const ctx = elCanvas.getContext('2d');
     weeklyChartInstance = new Chart(ctx, {
         type: 'bar',
-        data: { labels, datasets: [
-            { label: 'TST(小时)', data: tstHours, backgroundColor:'rgba(54,162,235,0.5)', borderColor:'rgba(54,162,235,1)', yAxisID:'y-tst' },
-            { label: 'SE(%)', data: sePercents, type:'line', borderColor:'rgba(255,99,132,1)', backgroundColor:'rgba(255,99,132,0.2)', tension:0.1, yAxisID:'y-se' }
-        ] },
-        options: { responsive:true, maintainAspectRatio:false, plugins:{ legend:{ position:'top' } }, scales:{
-            'y-tst': { position:'left', title:{ display:true, text:'小时' } },
-            'y-se': { position:'right', title:{ display:true, text:'百分比' }, suggestedMin:0, suggestedMax:100 }
-        } }
+        data: {
+            labels: chartData.labels,
+            datasets: [
+                { label: 'TST(小时)', data: chartData.tstHours, backgroundColor: 'rgba(54,162,235,0.5)', borderColor: 'rgba(54,162,235,1)', yAxisID: 'y-tst' },
+                { label: 'SE(%)', data: chartData.sePercents, type: 'line', borderColor: 'rgba(255,99,132,1)', backgroundColor: 'rgba(255,99,132,0.2)', tension: 0.1, yAxisID: 'y-se' }
+            ]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: { position: 'top' }
+            },
+            scales: {
+                'y-tst': { position: 'left', title: { display: true, text: '小时' } },
+                'y-se': { position: 'right', title: { display: true, text: '百分比' }, suggestedMin: 0, suggestedMax: 100 }
+            }
+        }
     });
+
     const label = document.getElementById('weeklyQuestionnaireSummary');
     if (label) {
         const latestPsqi = questionnaireStore.latestWithinRange('psqi', range.start, range.end);
@@ -2050,7 +2119,7 @@ let currentQuestionnaireEntryId = null;
 function renderQuestionnaireForm(id, entry = null) {
     currentQuestionnaireId = id;
     currentQuestionnaireEntryId = entry?.id || null;
-    const conf = questionnaires[id];
+    const conf = QuestionnaireRenderer.getQuestionnaire(id);
     const container = document.getElementById('questionnaireFormContainer');
     if (!container || !conf) return;
     container.innerHTML = '';
@@ -2157,12 +2226,12 @@ function saveCurrentQuestionnaire() {
         alert('请先选择要填写的量表。');
         return;
     }
-    const conf = questionnaires[id];
+    const conf = QuestionnaireRenderer.getQuestionnaire(id);
     if (!conf) return;
     const ans = collectQuestionnaireAnswers();
     if (!ans) return;
     const date = document.getElementById('datePicker')?.value || new Date().toISOString().split('T')[0];
-    const scoring = conf.scoringFn(ans);
+    const scoring = QuestionnaireRenderer.calculateScore(id, ans);
     if (scoring.score === null) {
         alert('请完整填写量表的必填项。');
         return;
@@ -2189,6 +2258,7 @@ function saveCurrentQuestionnaire() {
     }
     alert('测评已保存！');
     renderQuestionnaireForm(id, entry);
+    renderQuestionnaireHistory();  // 添加：刷新历史列表
     renderWeeklySummary();
 }
 
@@ -2209,6 +2279,7 @@ function deleteCurrentQuestionnaire() {
     currentQuestionnaireEntryId = null;
     alert('测评已删除。');
     renderQuestionnaireForm(entry.questionnaireId);
+    renderQuestionnaireHistory();  // 添加：刷新历史列表
     renderWeeklySummary();
 }
 
@@ -2255,7 +2326,7 @@ function renderQuestionnaireHistory() {
         }
         const info = document.createElement('div');
         info.className = 'qn-history-info';
-        info.textContent = `${entry.date} ${entry.questionnaireId.toUpperCase()} 得分：${entry.score ?? '-'}（${entry.severity ?? '-'}）`;
+        info.textContent = QuestionnaireRenderer.formatResult(entry);
         item.appendChild(info);
         if (entry.derived?.sleepEfficiency != null) {
             const meta = document.createElement('div');
