@@ -1666,7 +1666,7 @@ const isiOptionSet = [
 const questionnaires = {
     psqi: {
         id: 'psqi',
-        title: '匹兹堡睡眠质量指数 (PSQI)',
+        title: '匹兹堡睡眠质量指数(PSQI)',
         questions: [
             { key: 'q1_bedtime', text: '1. 近1个月，晚上上床睡觉通常是几点？', type: 'time' },
             { key: 'q2_latency_minutes', text: '2. 近1个月，从上床到入睡通常需要多少分钟？', type: 'number', min: 0, step: 5, placeholder: '分钟' },
@@ -1803,7 +1803,7 @@ const questionnaires = {
     },
     isi: {
         id: 'isi',
-        title: '失眠严重程度指数量表 (ISI)',
+        title: '失眠严重程度指数(ISI)',
         questions: [
             { key: 'q1', text: '1. 入睡困难', type: 'select', options: isiOptionSet },
             { key: 'q2', text: '2. 睡眠维持困难', type: 'select', options: isiOptionSet },
